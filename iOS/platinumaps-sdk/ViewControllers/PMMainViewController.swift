@@ -3,6 +3,7 @@ import WebKit
 import SafariServices
 import CoreLocation
 
+@MainActor
 protocol PMMainViewControllerDelegate: AnyObject {
     func openLink(_ url: URL, sharedCookie: Bool)
 }
@@ -10,11 +11,11 @@ protocol PMMainViewControllerDelegate: AnyObject {
 class PMMainViewController: UIViewController {
     
     // クラス内にエラーenumをネストして定義
-    private enum ErrorType: Error {
+    private enum ErrorType: Error, Sendable {
         case gone
     }
-    
-    enum PMCommand: String {
+
+    enum PMCommand: String, Sendable {
         case webReady = "web.ready"
         case webWillReload = "web.willreload"
         case locationStatus = "location.status"
@@ -80,11 +81,7 @@ class PMMainViewController: UIViewController {
         if _locationManager == nil {
             _locationManager = CLLocationManager()
             _locationManager?.delegate = self
-            if #available(iOS 14.0, *) {
-                self.currentAuthorizationStatus = _locationManager!.authorizationStatus
-            } else {
-                self.currentAuthorizationStatus = CLLocationManager.authorizationStatus()
-            }
+            self.currentAuthorizationStatus = _locationManager!.authorizationStatus
         }
         return _locationManager!
     }
@@ -119,9 +116,6 @@ class PMMainViewController: UIViewController {
     
     // 方角情報
     private var lastHeading: CLHeading? = nil
-    
-    /// 位置情報権限が拒否された時のダイアログに対する回答を管理するTask
-    private var alertTaskForLocationDenied: Task<Bool, Error>? = nil
     
     /// 位置情報が制限された時のダイアログを表示中かどうか（locationとbeaconで同じダイアログを表示しようとするため、スキップ制御したい）
     private var isAlertPresentedForLocationRestricted = false
@@ -231,10 +225,11 @@ class PMMainViewController: UIViewController {
         locationManager.delegate = self
         initBeaconIfNeeded()
         
-        DispatchQueue.global().async { [weak self] in
+        Task { [weak self] in
             guard let self = self else { return }
-            if CLLocationManager.locationServicesEnabled() {
-                self.isLocationServicesEnabled = true
+            let enabled = CLLocationManager.locationServicesEnabled()
+            self.isLocationServicesEnabled = enabled
+            if enabled {
                 self.currentAuthorizationStatus = self.locationManager.authorizationStatus
             } else {
                 self.currentAuthorizationStatus = .denied
@@ -246,7 +241,8 @@ class PMMainViewController: UIViewController {
         showCoverImageView()
         if mainWebView.canGoBack {
             mainWebView.goBack()
-            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(300)) { [weak self] in
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(300))
                 self?.reloadWebView(nil)
             }
         } else if mainWebView.url != nil {
@@ -312,9 +308,7 @@ class PMMainViewController: UIViewController {
     
     @objc private func willEnterForegroundNotification(_ notification: Notification) {
         if !locationWatchRequestIds.isEmpty {
-            Task {
-                try? await startLocationRequest(isOnce: false, isSilent: true)
-            }
+            startLocationRequest(isOnce: false, isSilent: true)
         }
         
         if useBeacon {
@@ -481,50 +475,25 @@ extension PMMainViewController {
             }
             return
         case .locationStatus:
-            Task { [weak self] in
-                do {
-                    let status = try await self?.locationAuthorizationStatusAsync()
-                    self?.locationStatusCommandCallback(status ?? .denied, command: command, requestId: requestId)
-                } catch {
-                    self?.locationStatusCommandCallback(.denied, command: command, requestId: requestId)
-                }
-            }
+            let status = locationAuthorizationStatus()
+            locationStatusCommandCallback(status, command: command, requestId: requestId)
             return
         case .locationAuthorize, .beaconAuthorize:
-            Task { [weak self] in
-                guard let self = self else { return }
-                do {
-                    let status = try await self.locationAuthorizationStatusAsync()
-                    if status == .notDetermined {
-                        self.locationAuthorizeRequestId = requestId
-                        await self.locationRequestWhenInUseAuthorization()
-                    } else {
-                        self.locationStatusCommandCallback(status, command: command, requestId: requestId)
-                    }
-                } catch {
-                    self.locationStatusCommandCallback(.denied, command: command, requestId: requestId)
-                }
+            let status = locationAuthorizationStatus()
+            if status == .notDetermined {
+                locationAuthorizeRequestId = requestId
+                locationRequestWhenInUseAuthorization()
+            } else {
+                locationStatusCommandCallback(status, command: command, requestId: requestId)
             }
             return
         case .locationOnce:
             locationOnceRequestIds.append(requestId)
-            Task {
-                do {
-                    try await startLocationRequest(isOnce: true, isSilent: false)
-                } catch {
-                    locationCommandCallback(location: nil, heading: nil, hasError: true)
-                }
-            }
+            startLocationRequest(isOnce: true, isSilent: false)
             return
         case .locationWatch:
             locationWatchRequestIds.append(requestId)
-            Task {
-                do {
-                    try await startLocationRequest(isOnce: false, isSilent: false)
-                } catch {
-                    locationCommandCallback(location: nil, heading: nil, hasError: true)
-                }
-            }
+            startLocationRequest(isOnce: false, isSilent: false)
             return
         case .locationClearWatch:
             locationWatchRequestIds.removeAll()
@@ -596,7 +565,6 @@ extension PMMainViewController {
         commandCallback(command, requestId: requestId, args: [:])
     }
     
-    @MainActor
     private func commandCallbackAsync(_ command: PMCommand, requestId: String, args: [String: Any], completion: ((Any?, Error?) -> Void)? = nil) {
         do {
             let jsonData = try JSONSerialization.data(withJSONObject: args, options: [])
@@ -675,25 +643,12 @@ extension PMMainViewController {
 
 // MARK: - CLLocationManagerDelegate
 extension PMMainViewController: CLLocationManagerDelegate {
-    /// 現在の権限状態を取得する。※バックグラウンドスレッドから実行すること
-    private func _locationAuthorizationStatusInBackground() -> CLAuthorizationStatus {
+    /// 現在の権限状態を取得する。
+    private func locationAuthorizationStatus() -> CLAuthorizationStatus {
         if isLocationServicesEnabled {
-            guard #available(iOS 14.0, *) else {
-                return CLLocationManager.authorizationStatus()
-            }
             return currentAuthorizationStatus
         }
         return .denied
-    }
-    
-    /// 現在の権限状態を取得する。（現在のスレッドを意識しないでOK）
-    private func locationAuthorizationStatusAsync() async throws -> CLAuthorizationStatus {
-        return try await Task.detached(priority: .background) { [weak self] in
-            guard let self = self else {
-                throw ErrorType.gone
-            }
-            return self._locationAuthorizationStatusInBackground()
-        }.value
     }
     
     /// 権限状態を3値のテキストに落とし込む
@@ -721,31 +676,27 @@ extension PMMainViewController: CLLocationManagerDelegate {
     }
     
     /// 権限状態をWebに返却する
-    @MainActor
     private func locationStatusCommandCallback(_ status: CLAuthorizationStatus, command: PMCommand, requestId: String) {
         let statusText = locationAuthorizationStatusText(status)
         commandCallback(command, requestId: requestId, args: ["status": statusText])
     }
     
-    private func startLocationRequest(isOnce: Bool, isSilent: Bool) async throws {
-        let status = try await locationAuthorizationStatusAsync()
+    private func startLocationRequest(isOnce: Bool, isSilent: Bool) {
+        let status = locationAuthorizationStatus()
 
         switch status {
         case .notDetermined:
-            await locationRequestWhenInUseAuthorization()
+            locationRequestWhenInUseAuthorization()
             return
         case .restricted:
             if !isSilent {
-                await presentAlertForLocationRestricted()
+                presentAlertForLocationRestricted()
             }
             locationCommandCallback(location: nil, heading: nil)
             return
         case .denied:
             if !isSilent {
-                let okOrCancel = try await presentAlertForLocationDenied()
-                if okOrCancel == false {
-                    locationCommandCallback(location: nil, heading: nil)
-                }
+                presentAlertForLocationDenied()
             } else {
                 locationCommandCallback(location: nil, heading: nil)
             }
@@ -760,7 +711,7 @@ extension PMMainViewController: CLLocationManagerDelegate {
             }
             locationCallbackStatus = 0
             lastHeading = nil
-            
+
             locationManager.startUpdatingLocation()
             locationManager.startUpdatingHeading()
             locationManager.startMonitoringSignificantLocationChanges()
@@ -771,9 +722,7 @@ extension PMMainViewController: CLLocationManagerDelegate {
             return
         }
     }
-    
-    /// locationManager.requestWhenInUseAuthorization() をメインスレッドで実行する
-    @MainActor
+
     private func locationRequestWhenInUseAuthorization() {
         locationManager.requestWhenInUseAuthorization()
     }
@@ -783,51 +732,54 @@ extension PMMainViewController: CLLocationManagerDelegate {
     }
     
     /// 位置情報権限が拒否されている旨のアラートを表示する。（OK押下でiOSの設定画面を開く）
-    @MainActor
-    private func presentAlertForLocationDenied() async throws -> Bool {
-        if let existingTask = alertTaskForLocationDenied {
-            return try await existingTask.value
-        }
-        
-        let task = Task<Bool, Error> {
-            try await withCheckedThrowingContinuation { [weak self] continuation in
-                guard let self = self else {
-                    continuation.resume(throwing: ErrorType.gone)
-                    return
-                }
-                
-                let alertTitle = self.localizedString(forKey: "PMDeniedTitle")
-                let alertMessage = self.localizedString(forKey: "PMDeniedMessage")
-                let okTitle = self.localizedString(forKey: "PMDeniedOk")
-                let cancelTitle = self.localizedString(forKey: "PMDeniedCancel")
-                
-                let alert = UIAlertController(title: alertTitle, message: alertMessage, preferredStyle: .alert)
-                
-                let okAction = UIAlertAction(title: okTitle, style: .default) { _ in
-                    if let url = URL(string: UIApplication.openSettingsURLString) {
-                        UIApplication.shared.open(url, options: [:], completionHandler: nil)
-                    }
-                    continuation.resume(returning: true)
-                    self.alertTaskForLocationDenied = nil
-                }
-                alert.addAction(okAction)
-                
-                let cancelAction = UIAlertAction(title: cancelTitle, style: .cancel) { _ in
-                    continuation.resume(returning: false)
-                    self.alertTaskForLocationDenied = nil
-                }
-                alert.addAction(cancelAction)
-                
-                self.present(alert, animated: true, completion: nil)
+    private func presentAlertForLocationDenied() {
+        let alertTitle = localizedString(forKey: "PMDeniedTitle")
+        let alertMessage = localizedString(forKey: "PMDeniedMessage")
+        let okTitle = localizedString(forKey: "PMDeniedOk")
+        let cancelTitle = localizedString(forKey: "PMDeniedCancel")
+
+        let alert = UIAlertController(title: alertTitle, message: alertMessage, preferredStyle: .alert)
+
+        let okAction = UIAlertAction(title: okTitle, style: .default) { _ in
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(url, options: [:], completionHandler: nil)
             }
         }
-        
-        self.alertTaskForLocationDenied = task
-        return try await task.value
+        alert.addAction(okAction)
+
+        let cancelAction = UIAlertAction(title: cancelTitle, style: .cancel) { [weak self] _ in
+            self?.locationCommandCallback(location: nil, heading: nil)
+        }
+        alert.addAction(cancelAction)
+
+        present(alert, animated: true, completion: nil)
     }
-    
+
+    /// 位置情報権限が拒否されている旨のアラートを表示する。（ビーコン用）
+    private func presentAlertForLocationDeniedForBeacon() {
+        let alertTitle = localizedString(forKey: "PMDeniedTitle")
+        let alertMessage = localizedString(forKey: "PMDeniedMessage")
+        let okTitle = localizedString(forKey: "PMDeniedOk")
+        let cancelTitle = localizedString(forKey: "PMDeniedCancel")
+
+        let alert = UIAlertController(title: alertTitle, message: alertMessage, preferredStyle: .alert)
+
+        let okAction = UIAlertAction(title: okTitle, style: .default) { _ in
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(url, options: [:], completionHandler: nil)
+            }
+        }
+        alert.addAction(okAction)
+
+        let cancelAction = UIAlertAction(title: cancelTitle, style: .cancel) { [weak self] _ in
+            self?.beaconCommandCallback(beacons: nil, hasError: true)
+        }
+        alert.addAction(cancelAction)
+
+        present(alert, animated: true, completion: nil)
+    }
+
     /// 権限が制限されている旨のアラートを表示する。（OK押下でアラートを閉じるだけ）
-    @MainActor
     private func presentAlertForLocationRestricted() {
         if isAlertPresentedForLocationRestricted {
             return
@@ -871,9 +823,7 @@ extension PMMainViewController: CLLocationManagerDelegate {
             // 位置情報を要求するコマンドを受け取っていれば位置情報を取得する
             switch status {
             case .authorizedAlways, .authorizedWhenInUse:
-                Task {
-                    try? await startLocationRequest(isOnce: !locationWatchRequestIds.isEmpty, isSilent: true)
-                }
+                startLocationRequest(isOnce: !locationWatchRequestIds.isEmpty, isSilent: true)
             case .notDetermined:
                 break
             default:
@@ -902,9 +852,7 @@ extension PMMainViewController: CLLocationManagerDelegate {
         if status != .notDetermined {
             // 権限を要求すると、まず .notDetermined が返ってくるのでこれは無視する。
             if let requestId = locationAuthorizeRequestId {
-                Task {
-                    await locationStatusCommandCallback(status, command: .locationAuthorize, requestId: requestId)
-                }
+                locationStatusCommandCallback(status, command: .locationAuthorize, requestId: requestId)
                 locationAuthorizeRequestId = nil
             }
         }
@@ -915,7 +863,8 @@ extension PMMainViewController: CLLocationManagerDelegate {
             locationCallbackStatus = 1
             // didUpdateLocations -> didUpdateHeading の順に呼ばれるので
             // 最初はちょっと待ってコールバックを処理する
-            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(120)) { [weak self] in
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(120))
                 let location = self?.locationManager.location
                 let heading = self?.locationManager.heading ?? self?.lastHeading
                 self?.locationCommandCallback(location: location, heading: heading)
@@ -947,7 +896,7 @@ extension PMMainViewController: CLLocationManagerDelegate {
     }
     
     private func locationCommandCallback(location: CLLocation?, heading: CLHeading?, hasError: Bool = false) {
-        var args: [String: Any] = [:];
+        var args: [String: Any] = [:]
         if let location = location {
             args["lat"] = location.coordinate.latitude
             args["lng"] = location.coordinate.longitude
@@ -958,28 +907,20 @@ extension PMMainViewController: CLLocationManagerDelegate {
         if hasError {
             args["hasError"] = true
         }
-        
-        Task { @MainActor [weak self] in
-            guard let self = self else { return }
-            
-            do {
-                let status = try await self.locationAuthorizationStatusAsync()
-                args["status"] = self.locationAuthorizationStatusText(status)
-            } catch {
-                args["status"] = "denied"
-            }
-            
-            self.locationOnceRequestIds.forEach { id in
-                self.commandCallback(.locationOnce, requestId: id, args: args)
-            }
-            
-            self.locationWatchRequestIds.forEach { id in
-                self.commandCallback(.locationWatch, requestId: id, args: args)
-            }
-            
-            self.locationOnceRequestIds.removeAll()
-            self.stopLocationRequestIfNoRequest()
+
+        let status = locationAuthorizationStatus()
+        args["status"] = locationAuthorizationStatusText(status)
+
+        locationOnceRequestIds.forEach { id in
+            commandCallback(.locationOnce, requestId: id, args: args)
         }
+
+        locationWatchRequestIds.forEach { id in
+            commandCallback(.locationWatch, requestId: id, args: args)
+        }
+
+        locationOnceRequestIds.removeAll()
+        stopLocationRequestIfNoRequest()
     }
 }
 
@@ -1016,7 +957,6 @@ extension PMMainViewController {
     }
     
     /// Web 側にコマンドを送る。
-    @MainActor
     private func commandPush(_ command: String, args: [String: Any]) {
         do {
             let jsonData = try JSONSerialization.data(withJSONObject: args, options: [])
@@ -1051,46 +991,34 @@ extension PMMainViewController {
     
     /// ビーコン情報取得要求をうけて、ビーコンのモニタリングを開始する。
     private func startBeaconRequest(isOnce: Bool, isSilent: Bool) {
-        Task { [weak self] in
-            guard let self = self else { return }
-            
-            do {
-                let status = try await self.locationAuthorizationStatusAsync()
-                logBeacon("startBeaconRequest(\(isOnce)): authorization status = \(locationAuthorizationStatusTextFull(status))")
-                
-                switch status {
-                case .notDetermined:
-                    await self.locationRequestWhenInUseAuthorization()
-                    return
-                case .restricted:
-                    // Parental Control, MDM, etc.
-                    if !isSilent {
-                        await self.presentAlertForLocationRestricted()
-                    }
-                    self.beaconCommandCallback(beacons: nil, hasError: true)
-                    return
-                case .denied:
-                    if !isSilent {
-                        // 設定を開いて権限を変えるかどうかのダイアログで、「変えない」と回答された → エラー通知
-                        let okOrCancel = try await self.presentAlertForLocationDenied()
-                        if okOrCancel == false {
-                            self.beaconCommandCallback(beacons: nil, hasError: true)
-                        }
-                    } else {
-                        self.beaconCommandCallback(beacons: nil, hasError: true)
-                    }
-                    return
-                case .authorizedAlways, .authorizedWhenInUse:
-                    self.startMonitoringBeaconIfNeeded()
-                    return
-                @unknown default:
-                    // New enum may be added in future
-                    self.beaconCommandCallback(beacons: nil, hasError: true)
-                    return
-                }
-            } catch {
-                self.beaconCommandCallback(beacons: nil, hasError: true)
+        let status = locationAuthorizationStatus()
+        logBeacon("startBeaconRequest(\(isOnce)): authorization status = \(locationAuthorizationStatusTextFull(status))")
+
+        switch status {
+        case .notDetermined:
+            locationRequestWhenInUseAuthorization()
+            return
+        case .restricted:
+            // Parental Control, MDM, etc.
+            if !isSilent {
+                presentAlertForLocationRestricted()
             }
+            beaconCommandCallback(beacons: nil, hasError: true)
+            return
+        case .denied:
+            if !isSilent {
+                presentAlertForLocationDeniedForBeacon()
+            } else {
+                beaconCommandCallback(beacons: nil, hasError: true)
+            }
+            return
+        case .authorizedAlways, .authorizedWhenInUse:
+            startMonitoringBeaconIfNeeded()
+            return
+        @unknown default:
+            // New enum may be added in future
+            beaconCommandCallback(beacons: nil, hasError: true)
+            return
         }
     }
     
@@ -1242,24 +1170,16 @@ extension PMMainViewController {
         
         // 異常
         args["hasError"] = true
-        
-        Task { @MainActor [weak self] in
-            guard let self = self else { return }
-            do {
-                let status = try await self.locationAuthorizationStatusAsync()
-                args["status"] = self.locationAuthorizationStatusText(status)
-            } catch {
-                args["status"] = "denied"
-            }
-            
-            self._beaconCommandCallback(args: args)
-            
-            // エラー通知したらWatch IDをクリアする
-            self.beaconWatchRequestIds.removeAll()
-        }
+
+        let status = locationAuthorizationStatus()
+        args["status"] = locationAuthorizationStatusText(status)
+
+        _beaconCommandCallback(args: args)
+
+        // エラー通知したらWatch IDをクリアする
+        beaconWatchRequestIds.removeAll()
     }
-    
-    @MainActor
+
     private func _beaconCommandCallback(args: [String: Any]) {
         beaconOnceRequestIds.forEach { id in
             commandCallback(.beaconOnce, requestId: id, args: args)
