@@ -1,5 +1,27 @@
 # Platinumaps Integration Guide (iOS)
 
+## Requirements
+
+- Swift 6.0+
+- Xcode 16.0+
+- iOS 16.0+
+
+## Installation
+
+### Swift Package Manager
+
+Add the following to your `Package.swift` dependencies:
+
+```swift
+.package(url: "https://github.com/boldright-inc/platinumaps-sdk.git", from: "3.0.0")
+```
+
+Or in Xcode: File > Add Package Dependencies, and enter the repository URL.
+
+### Manual Integration
+
+Copy the entire `/platinumaps-sdk` directory into your Xcode project.
+
 ## Folder Structure
 
 ```
