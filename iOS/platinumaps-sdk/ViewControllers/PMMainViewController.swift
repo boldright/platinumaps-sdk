@@ -116,6 +116,9 @@ class PMMainViewController: UIViewController {
     /// 位置情報が制限された時のダイアログを表示中かどうか（locationとbeaconで同じダイアログを表示しようとするため、スキップ制御したい）
     private var isAlertPresentedForLocationRestricted = false
 
+    /// 位置情報権限が拒否された時のダイアログを表示中かどうか
+    private var isAlertPresentedForLocationDenied = false
+
     // MARK: Beacon Members
     /// 屋内測位に利用する、スキャン対象ビーコンのUUIDを設定してください。
     var beaconUuid: String?
@@ -708,6 +711,11 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
     
     /// 位置情報権限が拒否されている旨のアラートを表示する。（OK押下でiOSの設定画面を開く）
     private func presentAlertForLocationDenied() {
+        if isAlertPresentedForLocationDenied {
+            return
+        }
+        isAlertPresentedForLocationDenied = true
+
         let alertTitle = localizedString(forKey: "PMDeniedTitle")
         let alertMessage = localizedString(forKey: "PMDeniedMessage")
         let okTitle = localizedString(forKey: "PMDeniedOk")
@@ -715,7 +723,8 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
 
         let alert = UIAlertController(title: alertTitle, message: alertMessage, preferredStyle: .alert)
 
-        let okAction = UIAlertAction(title: okTitle, style: .default) { _ in
+        let okAction = UIAlertAction(title: okTitle, style: .default) { [weak self] _ in
+            self?.isAlertPresentedForLocationDenied = false
             if let url = URL(string: UIApplication.openSettingsURLString) {
                 UIApplication.shared.open(url, options: [:], completionHandler: nil)
             }
@@ -723,6 +732,7 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
         alert.addAction(okAction)
 
         let cancelAction = UIAlertAction(title: cancelTitle, style: .cancel) { [weak self] _ in
+            self?.isAlertPresentedForLocationDenied = false
             self?.locationCommandCallback(location: nil, heading: nil)
         }
         alert.addAction(cancelAction)
@@ -732,6 +742,11 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
 
     /// 位置情報権限が拒否されている旨のアラートを表示する。（ビーコン用）
     private func presentAlertForLocationDeniedForBeacon() {
+        if isAlertPresentedForLocationDenied {
+            return
+        }
+        isAlertPresentedForLocationDenied = true
+
         let alertTitle = localizedString(forKey: "PMDeniedTitle")
         let alertMessage = localizedString(forKey: "PMDeniedMessage")
         let okTitle = localizedString(forKey: "PMDeniedOk")
@@ -739,7 +754,8 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
 
         let alert = UIAlertController(title: alertTitle, message: alertMessage, preferredStyle: .alert)
 
-        let okAction = UIAlertAction(title: okTitle, style: .default) { _ in
+        let okAction = UIAlertAction(title: okTitle, style: .default) { [weak self] _ in
+            self?.isAlertPresentedForLocationDenied = false
             if let url = URL(string: UIApplication.openSettingsURLString) {
                 UIApplication.shared.open(url, options: [:], completionHandler: nil)
             }
@@ -747,6 +763,7 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
         alert.addAction(okAction)
 
         let cancelAction = UIAlertAction(title: cancelTitle, style: .cancel) { [weak self] _ in
+            self?.isAlertPresentedForLocationDenied = false
             self?.beaconCommandCallback(beacons: nil, hasError: true)
         }
         alert.addAction(cancelAction)
