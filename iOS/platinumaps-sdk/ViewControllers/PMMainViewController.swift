@@ -341,7 +341,7 @@ class PMMainViewController: UIViewController {
 }
 
 // MARK: - WKUIDelegate
-extension PMMainViewController: WKUIDelegate {
+extension PMMainViewController: @preconcurrency WKUIDelegate {
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
         let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
         let okAction = UIAlertAction(title: "OK", style: .default) { (_) in
@@ -367,7 +367,7 @@ extension PMMainViewController: WKUIDelegate {
 }
 
 // MARK: - WKNavigationDelegate
-extension PMMainViewController: WKNavigationDelegate {
+extension PMMainViewController: @preconcurrency WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         if isWebViewLoading {
             // handle error
@@ -640,7 +640,7 @@ extension PMMainViewController {
 }
 
 // MARK: - CLLocationManagerDelegate
-extension PMMainViewController: CLLocationManagerDelegate {
+extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
     /// 現在の権限状態を取得する。
     private func locationAuthorizationStatus() -> CLAuthorizationStatus {
         if isLocationServicesEnabled {
