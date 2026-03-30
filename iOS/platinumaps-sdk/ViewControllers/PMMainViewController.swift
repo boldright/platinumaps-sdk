@@ -188,7 +188,9 @@ class PMMainViewController: UIViewController {
         ])
         
         if isWebViewInspectable {
-            webView.isInspectable = true
+            if #available(iOS 16.4, *) {
+                webView.isInspectable = true
+            }
         }
         
         mainWebView = webView;
