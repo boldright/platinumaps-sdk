@@ -412,18 +412,12 @@ extension PMMainViewController: WKNavigationDelegate {
 extension PMMainViewController {
     private func runCommand(commandUrl: URLComponents) {
         guard let command = PMCommand(rawValue: commandUrl.host ?? "") else {
-#if DEBUG
-            print("[PM] Unknown command: \(commandUrl.host ?? "")")
-#endif
             return
         }
         let queryItems = dictionaryFromUrlQuery(url: commandUrl)
         guard let requestId = queryItems["requestId"] else {
             return
         }
-#if DEBUG
-        print("[PM] runCommand: \(command.rawValue), requestId: \(requestId)")
-#endif
         switch command {
         case .appInfo:
             var args: [String: Any] = [:]
@@ -660,9 +654,6 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
     
     private func startLocationRequest(isOnce: Bool, isSilent: Bool) {
         let status = locationAuthorizationStatus()
-#if DEBUG
-        print("[PM] startLocationRequest(isOnce: \(isOnce), isSilent: \(isSilent)): status = \(locationAuthorizationStatusTextFull(status))")
-#endif
 
         switch status {
         case .notDetermined:
@@ -704,9 +695,6 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
     }
 
     private func locationRequestWhenInUseAuthorization() {
-#if DEBUG
-        print("[PM] requestWhenInUseAuthorization() called")
-#endif
         // Defer to next run loop iteration to avoid calling from within
         // WKNavigationDelegate callback, which blocks the system dialog.
         Task {
@@ -805,9 +793,6 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         let status = manager.authorizationStatus
         self.currentAuthorizationStatus = status
-#if DEBUG
-        print("[PM] locationManagerDidChangeAuthorization: \(locationAuthorizationStatusTextFull(status))")
-#endif
 
         if !locationOnceRequestIds.isEmpty || !locationWatchRequestIds.isEmpty {
             // 位置情報を要求するコマンドを受け取っていれば位置情報を取得する
