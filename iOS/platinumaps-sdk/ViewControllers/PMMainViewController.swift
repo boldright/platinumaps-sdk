@@ -168,16 +168,6 @@ class PMMainViewController: UIViewController {
     
     // MARK: - Lifecycle
     
-    deinit {
-        NotificationCenter.default.removeObserver(self)
-        stopLocationRequest()
-        
-        if useBeacon {
-            stopRangingBeaconsIfNeeded()
-            stopMonitoringBeaconIfNeeded()
-        }
-    }
-    
     override func viewDidLoad() {
         super.viewDidLoad()
         if mapSlug?.isEmpty != false {
