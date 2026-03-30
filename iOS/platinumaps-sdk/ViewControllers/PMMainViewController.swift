@@ -707,7 +707,11 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
 #if DEBUG
         print("[PM] requestWhenInUseAuthorization() called")
 #endif
-        locationManager.requestWhenInUseAuthorization()
+        // Defer to next run loop iteration to avoid calling from within
+        // WKNavigationDelegate callback, which blocks the system dialog.
+        Task {
+            self.locationManager.requestWhenInUseAuthorization()
+        }
     }
     
     private func localizedString(forKey key: String) -> String {
