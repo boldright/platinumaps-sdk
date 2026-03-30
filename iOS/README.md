@@ -4,7 +4,7 @@
 
 - Swift 6.0+
 - Xcode 16.0+
-- iOS 15.0+
+- iOS 16.0+
 
 ## Installation
 
