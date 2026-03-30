@@ -86,8 +86,6 @@ class PMMainViewController: UIViewController {
         return _locationManager!
     }
     
-    private var isLocationServicesEnabled = false
-
     private var currentAuthorizationStatus: CLAuthorizationStatus = .notDetermined
 
     private var isMeasuringLocation = false
@@ -212,17 +210,6 @@ class PMMainViewController: UIViewController {
         
         locationManager.delegate = self
         initBeaconIfNeeded()
-        
-        Task { [weak self] in
-            guard let self = self else { return }
-            let enabled = CLLocationManager.locationServicesEnabled()
-            self.isLocationServicesEnabled = enabled
-            if enabled {
-                self.currentAuthorizationStatus = self.locationManager.authorizationStatus
-            } else {
-                self.currentAuthorizationStatus = .denied
-            }
-        }
     }
     
     @objc private func reloadWebView(_ sender: Any?) {
@@ -631,12 +618,10 @@ extension PMMainViewController {
 
 // MARK: - CLLocationManagerDelegate
 extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
-    /// 現在の権限状態を取得する。
+    /// Returns the current location authorization status.
+    /// Updated via locationManagerDidChangeAuthorization callback.
     private func locationAuthorizationStatus() -> CLAuthorizationStatus {
-        if isLocationServicesEnabled {
-            return currentAuthorizationStatus
-        }
-        return .denied
+        return currentAuthorizationStatus
     }
     
     /// 権限状態を3値のテキストに落とし込む
