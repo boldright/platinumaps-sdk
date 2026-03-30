@@ -318,7 +318,7 @@ class PMMainViewController: UIViewController {
 }
 
 // MARK: - WKUIDelegate
-extension PMMainViewController: @preconcurrency WKUIDelegate {
+extension PMMainViewController: WKUIDelegate {
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable () -> Void) {
         let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
         let okAction = UIAlertAction(title: "OK", style: .default) { (_) in
@@ -344,7 +344,7 @@ extension PMMainViewController: @preconcurrency WKUIDelegate {
 }
 
 // MARK: - WKNavigationDelegate
-extension PMMainViewController: @preconcurrency WKNavigationDelegate {
+extension PMMainViewController: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         if isWebViewLoading {
             // handle error
