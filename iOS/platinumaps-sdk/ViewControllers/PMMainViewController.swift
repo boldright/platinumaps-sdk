@@ -704,6 +704,9 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
     }
 
     private func locationRequestWhenInUseAuthorization() {
+#if DEBUG
+        print("[PM] requestWhenInUseAuthorization() called")
+#endif
         locationManager.requestWhenInUseAuthorization()
     }
     
