@@ -13,7 +13,7 @@
 Add to your `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/boldright-inc/platinumaps-sdk.git", from: "3.0.0")
+.package(url: "https://github.com/boldright/platinumaps-sdk.git", from: "3.0.0")
 ```
 
 Or in Xcode: **File → Add Package Dependencies…** and enter the repository
