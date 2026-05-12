@@ -10,6 +10,12 @@ import android.webkit.WebViewClient
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 
+/**
+ * In-app browser used by the sample when the SDK reports
+ * `sharedCookie = true` on `onOpenLink`. Cookies set on the Platinumaps
+ * domain remain visible here so authenticated flows (e.g. stamp-rally
+ * rewards) keep working when the user follows a link out of the map.
+ */
 class WebBrowserActivity : AppCompatActivity() {
     companion object {
         const val BROWSING_URL = "browsingUrl"
@@ -53,7 +59,8 @@ class WebBrowserActivity : AppCompatActivity() {
                 }
             }
 
-            // Cookie を許可する
+            // Allow cookies (including third-party) so the in-app browser
+            // can carry over the Platinumaps session.
             val cookieManager = CookieManager.getInstance()
             cookieManager.setAcceptThirdPartyCookies(it, true)
             cookieManager.setAcceptCookie(true)

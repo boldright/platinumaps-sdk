@@ -1,0 +1,226 @@
+# Platinumaps SDK — Architecture and Contributor Guide
+
+This document is the canonical contributor-facing overview of the Platinumaps
+native SDKs. End-user integration instructions live in the per-platform
+[`iOS/README.md`](iOS/README.md) and [`Android/README.md`](Android/README.md).
+
+## What this repository is
+
+A pair of thin native shells — one for iOS, one for Android — that embed the
+Platinum Maps web application (`https://platinumaps.jp/maps/<slug>`) inside a
+`WKWebView` / `WebView` and surface a small set of native capabilities that
+the web layer cannot reach on its own:
+
+- Geolocation (one-shot and watch) with the platform permission dialog flow.
+- True-north heading via the magnetometer (Android only — iOS gets heading
+  through `CLLocationManager`).
+- iBeacon ranging (foreground only).
+- An in-app browser for links that need to inherit the Platinumaps session.
+- App Store / Play Store review entry points.
+- A file chooser proxy for `<input type="file">` (Android only).
+
+The SDK is intentionally narrow: it does **not** add layout, navigation, push
+notifications, analytics, or auth UI. The host app supplies all of that.
+
+## Repository layout
+
+```
+.
+├── CLAUDE.md                   ← this file
+├── README.md                   ← top-level introduction
+├── Package.swift               ← Swift Package manifest for the iOS target
+├── LICENSE                     ← MIT license
+├── iOS/
+│   ├── README.md               ← iOS integration guide
+│   └── platinumaps-sdk/
+│       ├── ViewControllers/
+│       │   ├── PMMainViewController.swift   ← hosts WKWebView, command bridge
+│       │   └── PMWebViewController.swift    ← shared-cookie in-app browser
+│       ├── Views/PMWebView.swift            ← WKWebView with zeroed insets
+│       ├── Types/PMLocale.swift             ← `culture` enum
+│       ├── Errors/PMError.swift             ← reserved for future use
+│       └── Platinumaps.bundle/              ← localized permission strings
+└── Android/
+    ├── README.md                            ← Android integration guide
+    ├── platinumaps-sdk-release.aar          ← prebuilt artifact
+    ├── platinumaps-sdk/                     ← canonical SDK module source
+    │   └── src/main/java/jp/co/boldright/platinumaps/sdk/
+    │       ├── PmWebView.kt                 ← WebView + command bridge
+    │       ├── PmMapOptions.kt              ← configuration record
+    │       ├── PmBeaconDto.kt               ← internal beacon record
+    │       └── PmAuthorizationStatus.kt     ← permission enum
+    └── sample/                              ← runnable Android sample app
+        ├── app/                             ← sample MainActivity / WebViewActivity / WebBrowserActivity
+        └── platinumaps-sdk/                 ← MIRROR of ../platinumaps-sdk/
+```
+
+> The two Android `platinumaps-sdk/` directories must stay byte-identical.
+> `diff -r Android/platinumaps-sdk Android/sample/platinumaps-sdk` should
+> report no differences after any SDK change.
+
+## The `command://` bridge
+
+Both platforms speak the same protocol. The web app issues a navigation to
+`command://<name>?requestId=<id>&...`; the SDK cancels the navigation, parses
+the host as the command name, and dispatches it. Replies and unsolicited
+pushes are sent back by evaluating JavaScript in the WebView:
+
+| Direction | Wire shape |
+|-----------|------------|
+| Web → native | `command://<name>?requestId=<id>&<params>` |
+| Native → web (reply) | `commandCallback(<nameJSON>, <requestIdJSON>, <argsJSON>)` |
+| Native → web (push) | `commandPush(<nameJSON>, <argsJSON>)` |
+
+Every JavaScript argument — including the command name and request id — is
+JSON-encoded before being interpolated into the script string. This is a
+hard requirement: `requestId` originates in a URL that the web layer
+controls, so any unescaped interpolation would be a cross-context injection
+vector.
+
+### Command catalogue
+
+| Command | Purpose | iOS | Android |
+|---------|---------|-----|---------|
+| `web.ready` | Web layer ready; reply may carry `launchUrl` | ✓ | ✓ |
+| `web.willreload` | Web is about to reload; SDK shows cover image | ✓ | ✓ |
+| `location.status` | Query current permission state | ✓ | ✓ |
+| `location.authorize` | Trigger the permission prompt | ✓ | ✓ |
+| `location.once` | One-shot fix | ✓ | ✓ |
+| `location.watch` | Continuous fixes until cleared | ✓ | ✓ |
+| `location.clearwatch` | Stop watching | ✓ | ✓ |
+| `heading.watch` | Magnetometer-derived heading | — | ✓ |
+| `heading.clearwatch` | Stop magnetometer | — | ✓ |
+| `beacon.authorize` | Request beacon-related permissions | ✓ | ✓ |
+| `beacon.once` | One-shot iBeacon snapshot | ✓ | ✓ |
+| `beacon.watch` | Continuous iBeacon snapshots | ✓ | ✓ |
+| `beacon.clearwatch` | Stop beacon scanning | ✓ | ✓ |
+| `browse.app` | Hand a URL to the system for handling | ✓ | ✓ |
+| `browse.inapp` | Open in an in-app browser (optionally shared-cookie) | ✓ | ✓ |
+| `map.navigate` | Open in the native maps app | ✓ | ✓ |
+| `app.info` | Return `userId`, `secretKey`, `offsetBottom` (iOS adds `offsetBottom`) | ✓ | ✓ |
+| `app.detect` | Reserved | stub | stub |
+| `app.review` | Open the store review page | ✓ | ✓ |
+| `stamprally.qrcode` | Reserved | stub | — |
+| `search.focus` | Reserved | stub | — |
+| `web.filechooser` | Reserved | — | stub |
+
+### URL scheme allowlist
+
+`browse.app`, `browse.inapp`, and `map.navigate` only forward URLs whose
+scheme is in `{ http, https, tel, mailto, sms, geo }`. Anything else
+(`javascript:`, `file:`, `intent:`, `about:`, `data:`, …) is dropped before
+reaching the system. This is a defence-in-depth against a compromised web
+layer trying to escalate via the native app.
+
+## Lifecycle contract
+
+### iOS
+
+`PMMainViewController` registers `UIApplication.willEnterForeground` /
+`didEnterBackground` observers in `viewDidAppear` and tears them down (plus
+the location manager delegate and any active beacon ranging) in `deinit`.
+There is no extra plumbing required from the host — present the controller
+modally or push it onto a navigation controller and the SDK handles the rest.
+
+### Android
+
+`PmWebView` is a regular `View`, so the host must forward five Activity /
+Fragment callbacks:
+
+```kotlin
+override fun onPause() { webView.activityPause(); super.onPause() }
+override fun onResume() { super.onResume(); webView.activityResume() }
+override fun onDestroy() { webView.activityDestroy(); super.onDestroy() }
+
+override fun onRequestPermissionsResult(rc: Int, p: Array<String>, gr: IntArray) {
+    super.onRequestPermissionsResult(rc, p, gr)
+    webView.handlePermissionResult(rc, gr)
+}
+
+override fun onActivityResult(rc: Int, code: Int, data: Intent?) {
+    super.onActivityResult(rc, code, data)
+    if (rc == PmWebView.FILE_CHOOSER_REQUEST_CODE) {
+        webView.handleFileChooserResult(rc, code, data)
+    }
+}
+```
+
+`activityPause()` stops location, BLE scanning, and the heading sensor.
+`activityResume()` restarts whichever subset was active before the pause.
+`activityDestroy()` releases every native resource and tears the WebView
+down — call it exactly once per WebView instance.
+
+## Threading model
+
+- **iOS** — `PMMainViewController` is implicitly `@MainActor`. All bridge
+  callbacks (`evaluateJavaScript`, `WKNavigationDelegate`, location and
+  beacon delegates) are dispatched on the main thread by the system. The
+  one explicit `Task.sleep` (the 120 ms heading-catchup) marshalls back to
+  the main actor via `[weak self]` capture.
+- **Android** — `WebView` and all of the SDK's mutable state must be
+  touched only from the main looper. BLE `ScanCallback` arrives on a
+  binder thread chosen by the OS, so `PmWebView.leScanCallback` re-posts
+  every result through `mainHandler` before mutating `beaconBuffer`.
+
+## Build & test
+
+### iOS
+
+- Toolchain: Swift 6.0+, Xcode 16+, iOS 16 deployment target.
+- Build the package: `swift build` (from repo root, with `Package.swift`).
+- Build in Xcode: open the package, select the `PlatinumapsSDK` target,
+  build.
+- There is no first-party sample app in the repo. To smoke-test, embed
+  `PMMainViewController` in a tiny host app:
+  ```swift
+  let vc = PMMainViewController()
+  vc.mapSlug = "demo"
+  present(UINavigationController(rootViewController: vc), animated: true)
+  ```
+
+### Android
+
+- Toolchain: AGP 8.12, Kotlin 1.8.22, JDK 17, minSdk 24, targetSdk 36.
+- Build the SDK module:
+  `./gradlew :platinumaps-sdk:assembleRelease` from `Android/sample/`.
+- Build & install the sample app:
+  `./gradlew :app:installDebug` from `Android/sample/`.
+- The sample lives at `Android/sample/` and demonstrates the lifecycle
+  contract, beacon configuration, and the in-app browser.
+
+## Where to make common changes
+
+| Task | iOS | Android |
+|------|-----|---------|
+| Add a new bridge command | `PMCommand` enum + `runCommand` switch in `PMMainViewController.swift` | `PMCommand` enum + `runCommand` switch in `PmWebView.kt` |
+| Add a new query parameter to the map URL | `viewDidAppear` URL-build block in `PMMainViewController.swift` | `openPlatinumaps(options, queryPrams)` builder in `PmWebView.kt` |
+| Tweak the permission allowlist for `browse.*` | `browseAllowedSchemes` in `PMMainViewController.swift` | `browseAllowedSchemes` in `PmWebView.kt` |
+| Add a new locale to the `culture` enum | `Types/PMLocale.swift` | n/a — Android derives `culture` from `Accept-Language` |
+
+When you change the canonical Android SDK module, copy the same files into
+`Android/sample/platinumaps-sdk/` (the trees must stay identical) and
+confirm with `diff -r`.
+
+## Security notes
+
+- **JS context isolation.** The bridge JSON-encodes everything it emits so
+  the web side cannot inject JavaScript by crafting a malicious `requestId`.
+- **URL allowlist.** `browse.*` and `map.navigate` only forward known-safe
+  schemes (`http`, `https`, `tel`, `mailto`, `sms`, `geo`).
+- **No `addJavascriptInterface`.** Android avoids the historical reflection
+  attack surface; communication is one-way `evaluateJavascript` only.
+- **Third-party cookies enabled.** Required for shared-cookie flows like
+  stamp-rally rewards. The in-app browser activity inherits the same cookie
+  jar.
+- **Debug-only WebView inspector.** iOS gates `isInspectable` behind
+  `isWebViewInspectable`; Android gates `setWebContentsDebuggingEnabled`
+  behind `BuildConfig.DEBUG`.
+- **Beacon UUID validation.** The Android scanner refuses to start when the
+  configured UUID is unparseable, so the BLE scan filter is never reduced
+  to "every Apple-manufacturer advertisement".
+
+## Versioning
+
+The bridge protocol is keyed by the user-agent suffix `Platinumaps/2.0.0`,
+which is part of the published contract between the SDK and the web app.
+Do not bump it without coordinating with the web team.

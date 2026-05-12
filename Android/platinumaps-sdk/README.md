@@ -1,39 +1,28 @@
-### Platinumaps Android SDK Integration Guide
+# Platinumaps Android Integration Guide
 
-This document explains the procedure for integrating the Platinumaps SDK into an Android application.
+This document explains how to integrate the Platinumaps SDK into an Android
+application.
 
------
+---
 
-### Directory Structure
+## Directory structure
 
 ```
-./README.md
-./platinumaps-sdk
-./platinumaps-sdk-release.aar
-./sample
+Android/
+├── README.md                       ← this file
+├── platinumaps-sdk-release.aar     ← prebuilt library
+├── platinumaps-sdk/                ← SDK module sources
+└── sample/                         ← runnable sample app
 ```
 
-#### README.md
+## Requirements
 
-This file
+- AGP 8.12+, Kotlin 1.8.22+, JDK 17.
+- `minSdk 24`, `compileSdk` / `targetSdk 36`.
+- Google Play Services Location 21.x (declared as a transitive dependency
+  of the SDK).
 
-#### platinumaps-sdk
-
-The SDK's project folder
-
-#### platinumaps-sdk-release.aar
-
-The SDK library file
-
-#### sample
-
-The sample project folder
-
------
-
-### Project Setup
-
-To use the Platinumaps SDK, you first need to configure the following permissions and features in your app's **`AndroidManifest.xml`** file.
+## Required manifest entries
 
 ```xml
 <uses-permission android:name="android.permission.INTERNET" />
@@ -46,67 +35,59 @@ To use the Platinumaps SDK, you first need to configure the following permission
 <uses-permission android:name="android.permission.RECORD_AUDIO" />
 <uses-feature android:name="android.hardware.camera" android:required="false" />
 <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
+<!-- Only if you enable iBeacon ranging -->
+<uses-permission android:name="android.permission.BLUETOOTH"
+    android:maxSdkVersion="30" />
+<uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
+    android:maxSdkVersion="30" />
+<uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
 ```
 
-**Note**: Setting the `android:required` attribute in `uses-feature` to `false` allows your app to be installed on devices that do not have camera hardware.
+Setting `android:required="false"` on the camera features lets the app
+install on devices without camera hardware.
 
------
+---
 
-### Integration Steps
+## Integration
 
-#### 1\. Add the SDK
+### 1. Add the SDK
 
-Add the `platinumaps-sdk-release.aar` file to your project. For specific instructions, please refer to the official Android Studio documentation: "[Add a library dependency](https://www.google.com/search?q=https://developer.android.com/studio/projects/android-library%3Fhl%3Den%23psd-add-library-dependency)".
-Alternatively, you can include the `platinumaps-sdk` folder in your project as a module.
+Either consume the prebuilt artifact:
 
-#### 2\. Set up the Layout
+```gradle
+dependencies {
+    implementation files("libs/platinumaps-sdk-release.aar")
+}
+```
 
-Add the **`PmWebView`** component to the layout file of the Activity where you want to display the map.
+…or include the source module from `Android/platinumaps-sdk/`:
 
-**`layout/activity_web_view.xml`**
+```gradle
+// settings.gradle
+include ':platinumaps-sdk'
+project(':platinumaps-sdk').projectDir = file('../platinumaps-sdk')
+
+// app/build.gradle
+dependencies {
+    implementation project(':platinumaps-sdk')
+}
+```
+
+### 2. Add `PmWebView` to your layout
 
 ```xml
-<?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
-    android:id="@+id/web_view_main"
+<jp.co.boldright.platinumaps.sdk.PmWebView
+    android:id="@+id/pm_sdk_web_view"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context=".WebViewActivity">
-
-    <jp.co.boldright.platinumaps.sdk.PmWebView
-        android:id="@+id/pm_sdk_web_view"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:focusable="true"
-        android:focusableInTouchMode="true"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
-</androidx.constraintlayout.widget.ConstraintLayout>
+    android:focusable="true"
+    android:focusableInTouchMode="true" />
 ```
 
-#### 3\. Implement in your Activity
-
-In the corresponding Activity class, initialize the **`PmWebView`** component and implement the logic to integrate the SDK's features.
-
-**`WebViewActivity.kt`**
+### 3. Wire it up in your Activity
 
 ```kotlin
-package jp.co.boldright.platinumaps
-
-import android.content.Intent
-import android.net.Uri
-import android.os.Bundle
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import jp.co.boldright.platinumaps.sdk.PmMapBeaconOptions
-import jp.co.boldright.platinumaps.sdk.PmMapOptions
-import jp.co.boldright.platinumaps.sdk.PmWebView
-
 class WebViewActivity : AppCompatActivity(), PmWebView.OnOpenLinkListener {
 
     private lateinit var webView: PmWebView
@@ -117,18 +98,17 @@ class WebViewActivity : AppCompatActivity(), PmWebView.OnOpenLinkListener {
         webView = findViewById(R.id.pm_sdk_web_view)
         webView.onOpenLinkListener = this
 
-        // Configure the map display settings using PmMapOptions
         webView.openPlatinumaps(
             PmMapOptions(
-                mapPath = "demo", // Specify the path of the map to display
-                queryParams = mapOf("key1" to "valueA", "key2" to "value2"), // Specify query parameters as a Map
-                safeAreaTop = 0,    // Height of the top safe area (e.g., notch) for full-screen displays
-                safeAreaBottom = 0, // Height of the bottom safe area (e.g., navigation bar) for full-screen displays
-                beacon = PmMapBeaconOptions( // Settings for using beacons
-                    uuid = "B9407F30-F5F8-466E-AFF9-25556B57FE6D", // Target beacon UUID
+                mapPath = "demo",
+                queryParams = mapOf("key1" to "valueA", "key2" to "value2"),
+                safeAreaTop = 0,
+                safeAreaBottom = 0,
+                beacon = PmMapBeaconOptions(
+                    uuid = "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
                     minSample = 5,
                     maxHistory = 5,
-                    memo = "Operation check",
+                    memo = "Smoke test",
                 )
             )
         )
@@ -140,23 +120,14 @@ class WebViewActivity : AppCompatActivity(), PmWebView.OnOpenLinkListener {
         }
     }
 
-    // Link the Activity's lifecycle with the SDK
-    override fun onPause() {
-        webView.activityPause()
-        super.onPause()
-    }
+    // -- Lifecycle contract --------------------------------------------------
 
-    override fun onResume() {
-        super.onResume()
-        webView.activityResume()
-    }
+    override fun onPause()   { webView.activityPause();  super.onPause() }
+    override fun onResume()  { super.onResume();         webView.activityResume() }
+    override fun onDestroy() { webView.activityDestroy(); super.onDestroy() }
 
-    override fun onDestroy() {
-        webView.activityDestroy()
-        super.onDestroy()
-    }
+    // -- Permission / file chooser plumbing ---------------------------------
 
-    // Pass the permission request result to the SDK
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<String>,
@@ -166,39 +137,118 @@ class WebViewActivity : AppCompatActivity(), PmWebView.OnOpenLinkListener {
         webView.handlePermissionResult(requestCode, grantResults)
     }
 
-    // Pass the file chooser result to the SDK
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        // Handle the result from the intent started by onShowFileChooser
         if (requestCode == PmWebView.FILE_CHOOSER_REQUEST_CODE) {
             webView.handleFileChooserResult(requestCode, resultCode, data)
         }
     }
 
-    // Handle link clicks within the map
+    // -- Outbound link handling ---------------------------------------------
+
     override fun onOpenLink(url: Uri, sharedCookie: Boolean) {
         if (sharedCookie) {
-            // This is called with sharedCookie=true when user information needs to be carried over,
-            // such as for stamp rally download rewards. Please display in an in-app browser.
-            val intent = Intent(this@WebViewActivity, WebBrowserActivity::class.java)
-            intent.putExtra(WebBrowserActivity.BROWSING_URL, url.toString())
-            startActivity(intent)
+            // The destination needs the current Platinumaps session — open
+            // an in-app browser that shares cookies with PmWebView.
+            startActivity(
+                Intent(this, WebBrowserActivity::class.java)
+                    .putExtra(WebBrowserActivity.BROWSING_URL, url.toString())
+            )
             return
         }
-        // Open other regular links in an external browser
-        val intent = Intent(Intent.ACTION_VIEW, url)
-        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        startActivity(intent)
+        // Anything else is safe to hand off to the system.
+        startActivity(
+            Intent(Intent.ACTION_VIEW, url)
+                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
     }
 }
 ```
 
-This code performs the following integrations:
+---
 
-  * **`onCreate`**: Initializes `PmWebView` and calls the **`openPlatinumaps`** method using a **`PmMapOptions`** object to specify the map path, query parameters, and beacon settings.
-  * **Lifecycle Integration**: Calls the corresponding SDK methods (`activityPause`, `activityResume`, `activityDestroy`) in `onPause`, `onResume`, and `onDestroy`. This ensures that location and beacon scanning are properly stopped and resumed when the app moves to the background, managing resources efficiently.
-  * **`onRequestPermissionsResult`**: Passes the result of a user's permission decision (e.g., for location) to the SDK's **`handlePermissionResult`** method.
-  * **`onActivityResult`**: Passes the result of a user's file selection from a file chooser dialog to the SDK's **`handleFileChooserResult`** method.
-  * **`onOpenLink`**: Called when a link within the map is tapped. If **`sharedCookie`** is `true`, it opens the link in an in-app browser because user information needs to be preserved. Otherwise, it is opened in an external browser.
+## Public API
 
-By following these steps, you can easily integrate the Platinumaps map functionality into your Android application.
+### `PmWebView`
+
+| Member | Description |
+|--------|-------------|
+| `openPlatinumaps(options: PmMapOptions)` | Loads the configured map. |
+| `openPlatinumaps(pagePath, mapQuery, safeAreaTop, safeAreaBottom)` | Back-compat overload that takes a raw `key=value&...` string. |
+| `activityPause()` | Pauses location, beacon, and heading sensors. Call from `onPause()`. |
+| `activityResume()` | Resumes whatever was paused. Call from `onResume()`. |
+| `activityDestroy()` | Tears down the WebView and releases native resources. Call from `onDestroy()`. |
+| `handlePermissionResult(requestCode, grantResults)` | Forwards `onRequestPermissionsResult` results into the SDK. |
+| `handleFileChooserResult(requestCode, resultCode, data)` | Forwards `onActivityResult` results for the file chooser. |
+| `onOpenLinkListener: OnOpenLinkListener?` | Optional. Custom outbound link handling. |
+
+### `PmMapOptions`
+
+```kotlin
+data class PmMapOptions(
+    val mapPath: String,                      // e.g. "demo" or "demo/sr999"
+    val queryParams: Map<String, String>? = null,
+    val safeAreaTop: Int = 0,
+    val safeAreaBottom: Int = 0,
+    val beacon: PmMapBeaconOptions? = null,
+)
+```
+
+### `PmMapBeaconOptions`
+
+```kotlin
+data class PmMapBeaconOptions(
+    val uuid: String,                         // iBeacon proximity UUID, hyphenated
+    val minSample: Int? = null,
+    val maxHistory: Int? = null,
+    val memo: String? = null,
+)
+```
+
+The UUID is validated up front; an unparseable UUID silently disables
+beacons rather than starting a wide-open BLE scan.
+
+### `PmWebView.OnOpenLinkListener`
+
+```kotlin
+interface OnOpenLinkListener {
+    fun onOpenLink(url: Uri, sharedCookie: Boolean)
+}
+```
+
+`sharedCookie == true` indicates the link needs the current Platinumaps
+session (typical example: stamp-rally reward downloads). The SDK already
+restricts forwarded URL schemes to `{ http, https, tel, mailto, sms, geo }`;
+the host does not need to filter again.
+
+---
+
+## Android 16 (API level 36) host-application notes
+
+The SDK is built and tested against `targetSdk 36`. When the host
+application also targets API level 36, please be aware of these platform
+behavior changes — the SDK itself does not require any code changes, but
+the host is responsible for handling them:
+
+- **Edge-to-edge enforcement.** Apps targeting API 36 cannot opt out of
+  edge-to-edge display. Apply window insets to the layout that contains
+  `PmWebView` (the snippet above does this with
+  `ViewCompat.setOnApplyWindowInsetsListener`) so the map UI is not
+  obscured by system bars.
+- **Predictive back gesture.** If the host overrides `onBackPressed()`,
+  migrate to `OnBackPressedCallback`. The SDK does not consume back events.
+- **Large-screen orientation / resize constraints.** On displays with
+  smallest width ≥ 600dp, `screenOrientation`, `resizeableActivity=false`,
+  and aspect-ratio limits are ignored. Verify the layout that hosts
+  `PmWebView` on tablets and foldables.
+
+---
+
+## What the SDK does NOT do
+
+- It does not add navigation chrome — wrap the WebView in your own layout.
+- It does not call `Activity#requestPermissions` directly: it goes through
+  the standard `ActivityCompat` flow so the host's permission rationale
+  / education UI keeps working.
+- It does not use `WebView.addJavascriptInterface` — the bridge is one-way
+  `evaluateJavascript`, avoiding the historical reflection attack surface.
