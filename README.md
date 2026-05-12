@@ -1,6 +1,6 @@
 # Platinumaps SDK
 
-Native iOS and Android SDKs that embed the [Platinum Maps](https://platinumaps.jp)
+Native iOS and Android SDKs that embed the [Platinumaps](https://platinumaps.jp)
 web application inside a `WKWebView` / `WebView` and bridge the limited set
 of native capabilities the web layer cannot reach on its own — geolocation,
 heading, iBeacon ranging, in-app browser, app-store review, file chooser.
