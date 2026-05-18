@@ -593,6 +593,14 @@ class PmWebView @JvmOverloads constructor(
             // intercept the very first navigation that loads the map page
             // itself. `shouldOverrideUrlLoading` is also called on
             // redirects, which is another reason to gate on `hasWebReady`.
+            // Apply the same scheme allowlist as the `browse.*` commands so
+            // a compromised web layer cannot escalate via `<a href="intent://...">`
+            // or other dangerous schemes that `CustomTabsIntent` would otherwise
+            // forward to the system.
+            if (!isSchemeAllowedForBrowse(uri)) {
+                Log.w(TAG, "openRequest: blocked disallowed scheme '${uri.scheme}'")
+                return 0u
+            }
             openWebBrowseInApp(uri)
         } else {
             return 1u;

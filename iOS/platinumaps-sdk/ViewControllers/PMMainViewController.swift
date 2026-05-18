@@ -151,10 +151,17 @@ class PMMainViewController: UIViewController {
     /// minimum cover-image display window so the splash does not flash.
     private let loadAt = Date()
 
-    /// `requestId` of the in-flight `location.authorize` (or
-    /// `beacon.authorize`) command. Cleared once the authorization status
-    /// resolves to something other than `.notDetermined`.
+    /// `requestId` of the in-flight `location.authorize` command. Cleared
+    /// once the authorization status resolves to something other than
+    /// `.notDetermined`.
     private var locationAuthorizeRequestId: String? = nil
+
+    /// `requestId` of the in-flight `beacon.authorize` command. Tracked
+    /// separately from `locationAuthorizeRequestId` so that the reply is
+    /// dispatched under the original command name; otherwise the web side
+    /// listens on `command.beacon.authorize.<id>` while the SDK fires
+    /// `command.location.authorize.<id>` and the Promise hangs forever.
+    private var beaconAuthorizeRequestId: String? = nil
 
     /// Active `requestId`s issued by `location.watch`.
     private var locationWatchRequestIds: [String] = []
@@ -552,10 +559,19 @@ extension PMMainViewController {
             let status = locationAuthorizationStatus()
             locationStatusCommandCallback(status, command: command, requestId: requestId)
             return
-        case .locationAuthorize, .beaconAuthorize:
+        case .locationAuthorize:
             let status = locationAuthorizationStatus()
             if status == .notDetermined {
                 locationAuthorizeRequestId = requestId
+                locationRequestWhenInUseAuthorization()
+            } else {
+                locationStatusCommandCallback(status, command: command, requestId: requestId)
+            }
+            return
+        case .beaconAuthorize:
+            let status = locationAuthorizationStatus()
+            if status == .notDetermined {
+                beaconAuthorizeRequestId = requestId
                 locationRequestWhenInUseAuthorization()
             } else {
                 locationStatusCommandCallback(status, command: command, requestId: requestId)
@@ -681,9 +697,10 @@ extension PMMainViewController {
             let data = try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed])
             return String(data: data, encoding: .utf8)
         } catch {
-#if DEBUG
-            dump(error)
-#endif
+            // A serialization failure here means the web side will never
+            // receive its reply and the Promise will hang. Log unconditionally
+            // so the failure is visible in release builds as well.
+            NSLog("PMMainViewController.jsLiteral failed: \(error)")
             return nil
         }
     }
@@ -991,6 +1008,10 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
                 locationStatusCommandCallback(status, command: .locationAuthorize, requestId: requestId)
                 locationAuthorizeRequestId = nil
             }
+            if let requestId = beaconAuthorizeRequestId {
+                locationStatusCommandCallback(status, command: .beaconAuthorize, requestId: requestId)
+                beaconAuthorizeRequestId = nil
+            }
         }
     }
 
@@ -1036,11 +1057,24 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
     private func locationCommandCallback(location: CLLocation?, heading: CLHeading?, hasError: Bool = false) {
         var args: [String: Any] = [:]
         if let location = location {
-            args["lat"] = location.coordinate.latitude
-            args["lng"] = location.coordinate.longitude
+            // JSONSerialization throws on NaN / Infinity, which would cause
+            // `commandCallbackAsync` to drop the reply and leave the web side
+            // waiting forever. Filter to finite values so degenerate samples
+            // never reach the bridge.
+            let lat = location.coordinate.latitude
+            let lng = location.coordinate.longitude
+            if lat.isFinite && lng.isFinite {
+                args["lat"] = lat
+                args["lng"] = lng
+            }
         }
         if let heading = heading {
-            args["heading"] = heading.magneticHeading
+            // `magneticHeading` is `-1` while the sensor is calibrating and
+            // can be NaN on simulators. Only forward valid samples.
+            let magneticHeading = heading.magneticHeading
+            if magneticHeading.isFinite && magneticHeading >= 0 {
+                args["heading"] = magneticHeading
+            }
         }
         if hasError {
             args["hasError"] = true
@@ -1282,7 +1316,10 @@ extension PMMainViewController {
         if let beacons = beacons {
             var beaconsArray = [[String: Any]]()
             for beacon in beacons {
-                if beacon.accuracy > 0 {
+                // `accuracy > 0` excludes the documented `-1` (unknown) and
+                // NaN values, but `isFinite` also rejects `+Infinity` so the
+                // payload is always JSON-serializable.
+                if beacon.accuracy > 0 && beacon.accuracy.isFinite {
                     beaconsArray.append([
                         "uuid": beacon.uuid.uuidString,
                         "major": beacon.major,
