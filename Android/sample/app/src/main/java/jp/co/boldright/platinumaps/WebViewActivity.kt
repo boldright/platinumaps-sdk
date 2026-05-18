@@ -25,11 +25,14 @@ class WebViewActivity : AppCompatActivity(), PmWebView.OnOpenLinkListener {
                 queryParams = mapOf("key1" to "valueA", "key2" to "value2"),
                 safeAreaTop = 0,
                 safeAreaBottom = 0,
+                // Replace with the iBeacon UUID issued for your map before
+                // shipping; an all-zero UUID is parseable but will never match a
+                // real beacon advertisement.
                 beacon = PmMapBeaconOptions(
-                    uuid = "XXX-XXX",
+                    uuid = "00000000-0000-0000-0000-000000000000",
                     minSample = 5,
                     maxHistory = 5,
-                    memo = "動作確認",
+                    memo = "Smoke test",
                 )
             )
         )

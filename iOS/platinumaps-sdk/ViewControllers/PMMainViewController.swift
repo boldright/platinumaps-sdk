@@ -3,17 +3,54 @@ import WebKit
 import SafariServices
 import CoreLocation
 
+/// Delegate that the host application may set on `PMMainViewController` to take
+/// over the handling of links that the embedded Platinumaps web app wants to
+/// open. When no delegate is set the SDK falls back to `SFSafariViewController`
+/// for HTTPS/HTTP and `UIApplication.open` for known custom schemes.
+///
+/// The delegate is invoked on the main actor.
 @MainActor
 protocol PMMainViewControllerDelegate: AnyObject {
+    /// Called when the web app requests that a link be opened outside the map.
+    /// - Parameters:
+    ///   - url: The destination URL. Schemes are restricted by the SDK to a
+    ///     conservative allowlist (`http`, `https`, `tel`, `mailto`, `sms`,
+    ///     `geo`); anything else is dropped before reaching the delegate.
+    ///   - sharedCookie: `true` when the web app marked the link as one that
+    ///     must carry the current session — for example, stamp-rally reward
+    ///     downloads. The host should open such links in an in-app browser
+    ///     that shares cookies with the embedded WebView. `false` when the
+    ///     link is safe to hand off to the system browser.
     func openLink(_ url: URL, sharedCookie: Bool)
 }
 
+/// Hosts the Platinumaps `WKWebView` and bridges native capabilities
+/// (location, heading, iBeacon ranging, in-app browser, app store review,
+/// universal-link relay) into the web app via the `command://` URL scheme.
+///
+/// Lifecycle: the controller wires itself as the `WKNavigationDelegate`,
+/// `WKUIDelegate`, and `CLLocationManagerDelegate`. It registers
+/// `UIApplication.willEnterForeground` / `didEnterBackground` observers on
+/// first appearance and tears them down in `deinit`. All public state is
+/// expected to be read or written on the main actor.
+///
+/// Bridge protocol:
+///   * Web → native: `command://<name>?requestId=<id>&...` is intercepted in
+///     `decidePolicyFor` and dispatched by `runCommand`.
+///   * Native → web: replies are sent via
+///     `commandCallback('<name>', '<requestId>', <argsJSON>)` and unsolicited
+///     pushes via `commandPush('<name>', <argsJSON>)`. All three arguments are
+///     JSON-encoded to keep attacker-influenced data out of JS context.
 class PMMainViewController: UIViewController {
-    
-    // クラス内にエラーenumをネストして定義
-    private enum ErrorType: Error, Sendable {
-        case gone
-    }
+
+    /// The set of URL schemes the SDK is willing to hand to
+    /// `SFSafariViewController` / `UIApplication.open` when the web app issues
+    /// `browse.app` / `browse.inapp` / `map.navigate`. Restricting the
+    /// allowlist protects against the web side trying to launch
+    /// `javascript:`, `file:`, `about:`, or `data:` URLs.
+    private static let browseAllowedSchemes: Set<String> = [
+        "http", "https", "tel", "mailto", "sms", "geo",
+    ]
 
     enum PMCommand: String, Sendable {
         case webReady = "web.ready"
@@ -31,7 +68,7 @@ class PMMainViewController: UIViewController {
         case appReview = "app.review"
         case mapNavigate = "map.navigate"
         case searchFocus = "search.focus"
-        
+
         //#region Beacon
         case beaconAuthorize = "beacon.authorize"
         case beaconOnce = "beacon.once"
@@ -39,43 +76,59 @@ class PMMainViewController: UIViewController {
         case beaconClearWatch = "beacon.clearwatch"
         //#endregion
     }
-    
+
     private weak var mainWebView: PMWebView!
     private weak var coverImageView: UIImageView!
-    
+
     public weak var delegate: PMMainViewControllerDelegate?
-    
-    /// 表示対象のマップの「URL用文字列」を設定してください。
+
+    /// Required. The URL-safe slug of the map to display. The final URL is
+    /// `https://platinumaps.jp/maps/<mapSlug>`.
     public var mapSlug: String? = nil
-    
-    /// 追加のクエリパラメータを利用する場合に設定してください。
+
+    /// Optional. Extra query parameters appended to the map URL.
     public var mapQuery: [String: String] = [:]
-    
-    /// マップの表示言語を明示的に指定したい場合に設定してください。デフォルトでは、アプリの言語（UserDefaults.standard）ないしシステムの言語で表示されます。
+
+    /// Optional. Forces the map UI language. When `nil` the WebView's
+    /// `Accept-Language` (derived from `UserDefaults.standard`'s
+    /// `AppleLanguages`) determines the language.
     public var mapLocale: PMLocale? = nil
-    
+
+    /// Optional. The numeric App Store ID (e.g. `"1234567890"`) used by the
+    /// `app.review` command to open the App Store review page.
     public var appStoreId: String? = nil
-    
+
+    /// Optional. Splash image shown while the web layer boots; faded out once
+    /// the web layer signals `web.ready`.
     public var coverImage: UIImage? = nil
-    
+
+    /// Optional. Opaque user identifier the web app may consume via
+    /// `app.info`.
     public var userId: String? = nil
-    
+
+    /// Optional. Opaque shared secret the web app may consume via `app.info`.
+    /// Treat this as sensitive: only set it when the host application has a
+    /// legitimate need for the web layer to authenticate the user.
     public var secretKey: String? = nil
-    
+
+    /// Optional. When non-zero, the SDK reports `safearea` to the web with
+    /// the bottom inset zeroed out — useful when the host already adds its
+    /// own bottom inset (e.g. a tab bar).
     public var offsetBottom: Int = 0
-    
-    // Universal Linkから起動される時のURL
+
+    /// Optional. URL captured from a Universal Link / Custom URL Scheme launch
+    /// that should be forwarded to the web app once it is ready. Use
+    /// `pushLaunchURL(_:)` from outside the SDK to push a URL at runtime.
     public var launchURL: URL? = nil
-    
-    // 初回画面表示フラグ
+
     private var isFirstViewAppear = false
-    
-    // WebView がページを読み込んでいるときにtrueになる
+
+    /// `true` while the WebView is loading a top-level page.
     private var isWebViewLoading = false
-    
-    // web.ready が呼ばれた
+
+    /// `true` once the web layer has signalled `web.ready` at least once.
     private var hasWebReady = false
-    
+
     private var _locationManager: CLLocationManager? = nil
     private var locationManager: CLLocationManager {
         if _locationManager == nil {
@@ -83,44 +136,63 @@ class PMMainViewController: UIViewController {
         }
         return _locationManager!
     }
-    
+
     private var currentAuthorizationStatus: CLAuthorizationStatus = .notDetermined
 
     private var isMeasuringLocation = false
-    
+
     private var originalUrl = URLComponents()
-    
-    // WebView のロード処理が行われた時間
+
+    /// Timestamp of the most recent WebView load — retained for future
+    /// timeout / telemetry use.
     private var webViewLoadingAt: Date? = nil
-    
-    // この画面が読み込まれた時間
+
+    /// Timestamp captured at controller instantiation. Used to enforce a
+    /// minimum cover-image display window so the splash does not flash.
     private let loadAt = Date()
-    
-    // location.authorize の requestId
+
+    /// `requestId` of the in-flight `location.authorize` command. Cleared
+    /// once the authorization status resolves to something other than
+    /// `.notDetermined`.
     private var locationAuthorizeRequestId: String? = nil
-    
-    // location.watch が要求された requestId の一覧
+
+    /// `requestId` of the in-flight `beacon.authorize` command. Tracked
+    /// separately from `locationAuthorizeRequestId` so that the reply is
+    /// dispatched under the original command name; otherwise the web side
+    /// listens on `command.beacon.authorize.<id>` while the SDK fires
+    /// `command.location.authorize.<id>` and the Promise hangs forever.
+    private var beaconAuthorizeRequestId: String? = nil
+
+    /// Active `requestId`s issued by `location.watch`.
     private var locationWatchRequestIds: [String] = []
-    
-    // location.once が要求された requestId の一覧
+
+    /// Pending `requestId`s issued by `location.once`. Each entry is fired
+    /// exactly once when the next valid location/heading pair arrives, then
+    /// the array is emptied.
     private var locationOnceRequestIds: [String] = []
-    
-    // didUpdateLocations が呼ばれた時のコールバック処理状態
-    // 最初に didUpdateLocations が呼ばれた時に方角の情報が存在していないので
-    // 方角の情報が取得できるまでコールバック処理を遅らせたい
+
+    /// State machine that coordinates the first location callback after we
+    /// start ranging. `0` = waiting for the first `didUpdateLocations`,
+    /// `1` = first location seen, sleeping briefly so a heading sample can
+    /// catch up (heading is delivered slightly later than the first
+    /// location), `2` = steady state, callbacks flow through immediately.
     private var locationCallbackStatus = 0
-    
-    // 方角情報
+
+    /// Most-recent heading sample, kept because `CLLocationManager.heading`
+    /// can momentarily return `nil` after the first delivery.
     private var lastHeading: CLHeading? = nil
-    
-    /// 位置情報が制限された時のダイアログを表示中かどうか（locationとbeaconで同じダイアログを表示しようとするため、スキップ制御したい）
+
+    /// `true` while the "Location Services restricted" alert is on screen.
+    /// Prevents duplicate alerts when both the location and beacon paths
+    /// try to surface the same dialog.
     private var isAlertPresentedForLocationRestricted = false
 
-    /// 位置情報権限が拒否された時のダイアログを表示中かどうか
+    /// `true` while the "Location permission denied" alert is on screen.
     private var isAlertPresentedForLocationDenied = false
 
     // MARK: Beacon Members
-    /// 屋内測位に利用する、スキャン対象ビーコンのUUIDを設定してください。
+    /// Optional. iBeacon UUID (hyphenated) to range. When `nil` the beacon
+    /// path is disabled and `beacon.*` commands resolve as no-ops.
     var beaconUuid: String?
     private var useBeacon = false
     private var beaconRegion: CLBeaconRegion!
@@ -146,17 +218,21 @@ class PMMainViewController: UIViewController {
 #endif
         }
     }
-    /// BG移行時に一時停止した状態（現状ログにしか使っていない）
+    /// `true` while ranging/monitoring was paused for background mode.
+    /// Currently only consumed by debug logging.
     private var isBeaconPaused = false
     // MARK: Other Settings
-    
-    /// WebViewのインスペクタを有効にする（デフォルトOFF）
+
+    /// Enable WebKit Inspector (`isInspectable` on iOS 16.4+) for the
+    /// embedded `WKWebView`. Off by default.
     public var isWebViewInspectable = false
-    
-    /// Platinumapsサーバ環境
+
+    /// Platinumaps origin. Swapped out only in tests / staging.
     private var mapOrigin = "https://platinumaps.jp"
-    
-    /// Bundle
+
+    /// Lazy handle to the SDK's resource bundle. The bundle is registered as
+    /// an SPM resource (`Package.swift` → `.process("Platinumaps.bundle")`)
+    /// and contains the localized strings used by the permission alerts.
     private var _bundle: Bundle? = nil
     private var bundle: Bundle {
         if _bundle == nil {
@@ -164,15 +240,15 @@ class PMMainViewController: UIViewController {
         }
         return _bundle!
     }
-    
+
     // MARK: - Lifecycle
-    
+
     override func viewDidLoad() {
         super.viewDidLoad()
         if mapSlug?.isEmpty != false {
             fatalError("MapSlug is empty")
         }
-        
+
         let webViewConfig = WKWebViewConfiguration()
         webViewConfig.applicationNameForUserAgent = "Platinumaps/2.0.0"
         webViewConfig.allowsInlineMediaPlayback = true
@@ -186,15 +262,15 @@ class PMMainViewController: UIViewController {
             webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
-        
+
         if isWebViewInspectable {
             if #available(iOS 16.4, *) {
                 webView.isInspectable = true
             }
         }
-        
+
         mainWebView = webView;
-        
+
         if let image = coverImage {
             let imageView = UIImageView(frame: view.bounds)
             imageView.translatesAutoresizingMaskIntoConstraints = true
@@ -208,13 +284,30 @@ class PMMainViewController: UIViewController {
             imageView.image = image
             coverImageView = imageView;
         }
-        
+
         isFirstViewAppear = true
-        
+
         locationManager.delegate = self
         initBeaconIfNeeded()
     }
-    
+
+    deinit {
+        // Best-effort cleanup: stop any in-flight sensors and detach observers
+        // so callbacks cannot fire into a deallocated controller. We touch
+        // `_locationManager` directly to avoid lazily creating one in deinit.
+        NotificationCenter.default.removeObserver(self)
+        if let manager = _locationManager {
+            manager.stopUpdatingLocation()
+            manager.stopUpdatingHeading()
+            manager.stopMonitoringSignificantLocationChanges()
+            if let region = beaconRegion {
+                manager.stopRangingBeacons(satisfying: region.beaconIdentityConstraint)
+                manager.stopMonitoring(for: region)
+            }
+            manager.delegate = nil
+        }
+    }
+
     @objc private func reloadWebView(_ sender: Any?) {
         showCoverImageView()
         if mainWebView.canGoBack {
@@ -229,32 +322,36 @@ class PMMainViewController: UIViewController {
             mainWebView.load(URLRequest(url: url))
         }
     }
-    
+
     @objc private func openAppSettings(_ sender: Any?) {
         if let url = URL(string: UIApplication.openSettingsURLString) {
             UIApplication.shared.open(url, options: [:], completionHandler: nil)
         }
     }
-    
+
     override func viewDidAppear(_ animated: Bool) {
-        
+
         super.viewDidAppear(animated)
         if isFirstViewAppear {
             let path = "/maps/\(mapSlug!)"
             var urlComp = URLComponents(string: "\(mapOrigin)\(path)")!
-            
+
             var queryItems = [URLQueryItem]();
-            
-            // Cultureはアプリ言語（UserDefaults.standardのAppleLanguages）を元にWebViewのAccept-Languageが構成されるが、直接指定のI/Fは残しておく。
+
+            // `culture` is normally derived from the WebView's
+            // `Accept-Language` header (which itself follows the host app's
+            // `AppleLanguages`). The explicit override is kept for hosts that
+            // need to pin the map language independently of the app.
             if let mapLocale = mapLocale {
                 queryItems.append(URLQueryItem(name: "culture", value: mapLocale.rawValue))
             }
-            
+
             queryItems.append(URLQueryItem(name: "native", value: "1"))
             mapQuery.forEach { item in
                 queryItems.append(URLQueryItem(name: item.key, value: item.value))
             }
-            // view が表示されてからでないと SafeArea の値は設定されない
+            // Safe-area insets are only valid after the view has been laid
+            // out, so we capture them here in `viewDidAppear`.
             let safeAreaTop = self.view.safeAreaInsets.top
             var safeAreaBottom = self.view.safeAreaInsets.bottom
             if (offsetBottom > 0) {
@@ -262,14 +359,14 @@ class PMMainViewController: UIViewController {
             }
             queryItems.append(URLQueryItem(name: "safearea", value: "\(safeAreaTop),\(safeAreaBottom)"));
             urlComp.queryItems = queryItems;
-            
+
             if let url = urlComp.url {
                 originalUrl = urlComp
                 mainWebView.uiDelegate = self
                 mainWebView.navigationDelegate = self
                 mainWebView.load(URLRequest(url: url))
             }
-            
+
             NotificationCenter.default.addObserver(self,
                                                    selector: #selector(willEnterForegroundNotification(_:)),
                                                    name: UIApplication.willEnterForegroundNotification,
@@ -281,33 +378,37 @@ class PMMainViewController: UIViewController {
         }
         isFirstViewAppear = false
     }
-    
+
     // MARK: - Handlers
-    
+
     @objc private func willEnterForegroundNotification(_ notification: Notification) {
         if !locationWatchRequestIds.isEmpty {
             startLocationRequest(isOnce: false, isSilent: true)
         }
-        
+
         if useBeacon {
             beaconWillEnterForeground()
         }
     }
-    
+
     @objc private func didEnterBackgroundNotification(_ notification: Notification) {
         stopLocationRequest()
-        
+
         if useBeacon {
             beaconDidEnterBackground()
         }
     }
-    
+
     override func present(_ viewControllerToPresent: UIViewController, animated flag: Bool, completion: (() -> Void)? = nil) {
+        // Walk the presentation chain so a `present` call always lands on the
+        // top-most view controller. This prevents "Attempt to present X on
+        // Y while Z is presented" warnings when the SDK shows permission
+        // alerts on top of an already-displayed modal.
         guard var front = self.presentedViewController else {
             super.present(viewControllerToPresent, animated: flag, completion: completion)
             return
         }
-        
+
         while true {
             if let frontOfFront = front.presentedViewController {
                 front = frontOfFront
@@ -315,7 +416,7 @@ class PMMainViewController: UIViewController {
                 break
             }
         }
-        
+
         front.present(viewControllerToPresent, animated: flag, completion: completion)
     }
 }
@@ -330,9 +431,9 @@ extension PMMainViewController: WKUIDelegate {
         alert.addAction(okAction)
         present(alert, animated: true, completion: nil)
     }
-    
+
     func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable (Bool) -> Void) {
-        
+
         let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
         let okAction = UIAlertAction(title: "OK", style: .default) { (_) in
             completionHandler(true)
@@ -349,39 +450,41 @@ extension PMMainViewController: WKUIDelegate {
 // MARK: - WKNavigationDelegate
 extension PMMainViewController: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        if isWebViewLoading {
-            // handle error
-        }
+        // Provisional navigation failures (DNS, TLS, offline, etc.) are
+        // surfaced to the web layer by the page's own retry UI, so the SDK
+        // intentionally does not present its own error dialog here. We only
+        // reset the loading flag so subsequent reloads are unblocked.
         isWebViewLoading = false
     }
-    
+
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         if hasWebReady {
-            // web.ready が呼ばれていれば以後ページロードが発生しても無視する
+            // Once `web.ready` has fired we trust the web layer to manage
+            // subsequent navigations on its own.
             return
         }
         isWebViewLoading = true
-        
+
         let loadingAt = Date()
         webViewLoadingAt = loadingAt
-        
-        // 一定時間経過によるエラー表示は行わない。
     }
-    
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         isWebViewLoading = false
     }
-    
+
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
         guard let url = navigationAction.request.url, let requestUrl = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             decisionHandler(.cancel)
             return
         }
-        
+
         if requestUrl.scheme != "command" {
             switch navigationAction.navigationType {
             case .linkActivated:
-                // <a> がタップされた
+                // Anchor tap: route HTTPS/HTTP through Safari View Controller
+                // (or the delegate), and let the OS resolve recognised
+                // schemes like `tel:` / `mailto:`.
                 if requestUrl.scheme == "https" || requestUrl.scheme == "http" {
                     openSafariViewController(url)
                 } else if UIApplication.shared.canOpenURL(url) {
@@ -395,8 +498,8 @@ extension PMMainViewController: WKNavigationDelegate {
             decisionHandler(.allow)
             return
         }
-        
-        // command://xxx のようなリクエストは WebView では処理させない。
+
+        // command://* is consumed by the bridge — never let WebKit follow it.
         decisionHandler(.cancel)
         runCommand(commandUrl: requestUrl)
     }
@@ -404,7 +507,7 @@ extension PMMainViewController: WKNavigationDelegate {
         guard let queryItems = url.queryItems else {
             return [:]
         }
-        
+
         var work = [String: String]()
         queryItems.forEach { (item) in
             work[item.name] = item.value ?? ""
@@ -456,10 +559,19 @@ extension PMMainViewController {
             let status = locationAuthorizationStatus()
             locationStatusCommandCallback(status, command: command, requestId: requestId)
             return
-        case .locationAuthorize, .beaconAuthorize:
+        case .locationAuthorize:
             let status = locationAuthorizationStatus()
             if status == .notDetermined {
                 locationAuthorizeRequestId = requestId
+                locationRequestWhenInUseAuthorization()
+            } else {
+                locationStatusCommandCallback(status, command: command, requestId: requestId)
+            }
+            return
+        case .beaconAuthorize:
+            let status = locationAuthorizationStatus()
+            if status == .notDetermined {
+                beaconAuthorizeRequestId = requestId
                 locationRequestWhenInUseAuthorization()
             } else {
                 locationStatusCommandCallback(status, command: command, requestId: requestId)
@@ -491,19 +603,20 @@ extension PMMainViewController {
             logBeacon("command: beacon.clearwatch")
             beaconWatchRequestIds.removeAll()
             stopBeaconRequestIfNoRequest()
-            break // common callback flow
+            break
         case .stampRallyQrCode:
             break
         case .browseApp, .browseInApp:
             if let target = queryItems["url"] {
                 var wUrl = URL(string: target)
                 if wUrl?.scheme == nil {
-                    // ホストが指定されていない場合はページパス以降が指定されているので
-                    // mainWebView に設定した同じドメインのページを表示する
+                    // Schemeless URLs (`/foo/bar`) are resolved against the
+                    // currently-displayed map origin so the same domain is
+                    // preserved.
                     wUrl = URL(string: target, relativeTo: originalUrl.url)?.absoluteURL
                 }
-                
-                if let url = wUrl {
+
+                if let url = wUrl, Self.isSchemeAllowedForBrowse(url) {
                     if let _ = delegate {
                         delegate?.openLink(url, sharedCookie: queryItems["sharedCookie"] == "true")
                         return
@@ -533,7 +646,7 @@ extension PMMainViewController {
             }
             break
         case .mapNavigate:
-            if let target = queryItems["url"], let url = URL(string: target) {
+            if let target = queryItems["url"], let url = URL(string: target), Self.isSchemeAllowedForBrowse(url) {
                 UIApplication.shared.open(url, options: [:], completionHandler: nil)
             }
             break
@@ -542,35 +655,65 @@ extension PMMainViewController {
         }
         commandCallback(command, requestId: requestId, args: [:])
     }
-    
-    private func commandCallbackAsync(_ command: PMCommand, requestId: String, args: [String: Any], completion: ((Any?, Error?) -> Void)? = nil) {
-        do {
-            let jsonData = try JSONSerialization.data(withJSONObject: args, options: [])
-            if let jsonString = String(data: jsonData, encoding: .utf8) {
-                mainWebView.evaluateJavaScript("commandCallback('\(command.rawValue)', '\(requestId)', \(jsonString))", completionHandler: {value, error in
-                    completion?(value, error)
-                })
-                return
-            }
-        } catch {
-            dump(error)
+
+    /// True when `url`'s scheme is in the SDK's browse allowlist. Returning
+    /// false means the SDK silently drops the navigation request rather than
+    /// risk handing arbitrary URLs (`javascript:`, `file:`, `about:`, …) to
+    /// `UIApplication.open`.
+    private static func isSchemeAllowedForBrowse(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else {
+            return false
         }
-        completion?(nil, nil as Error?)
+        return Self.browseAllowedSchemes.contains(scheme)
     }
-    
+
+    private func commandCallbackAsync(_ command: PMCommand, requestId: String, args: [String: Any], completion: ((Any?, Error?) -> Void)? = nil) {
+        // We construct the JS expression by JSON-encoding every input. This
+        // prevents the web side (or anyone able to plant a `requestId` value)
+        // from breaking out of the string and executing arbitrary JS in our
+        // page context.
+        guard let commandLiteral = Self.jsLiteral(command.rawValue),
+              let requestIdLiteral = Self.jsLiteral(requestId),
+              let argsLiteral = Self.jsLiteral(args) else {
+            completion?(nil, nil as Error?)
+            return
+        }
+        let script = "commandCallback(\(commandLiteral), \(requestIdLiteral), \(argsLiteral))"
+        mainWebView.evaluateJavaScript(script) { value, error in
+            completion?(value, error)
+        }
+    }
+
     private func commandCallback(_ command: PMCommand, requestId: String, args: [String: Any]) {
         commandCallbackAsync(command, requestId: requestId, args: args)
     }
-    
+
+    /// Serializes any JSON-compatible value to a JavaScript literal string
+    /// (e.g. `"abc'def"` becomes `"abc\\u0027def"`). Returns `nil` on
+    /// non-serializable inputs, in which case callers should drop the
+    /// payload rather than emit unsafe JS.
+    fileprivate static func jsLiteral(_ value: Any) -> String? {
+        do {
+            let data = try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed])
+            return String(data: data, encoding: .utf8)
+        } catch {
+            // A serialization failure here means the web side will never
+            // receive its reply and the Promise will hang. Log unconditionally
+            // so the failure is visible in release builds as well.
+            NSLog("PMMainViewController.jsLiteral failed: \(error)")
+            return nil
+        }
+    }
+
     private func showCoverImageView(_ completion: (() -> Void)? = nil) {
         if let coverImageView = self.coverImageView {
             view.bringSubviewToFront(coverImageView)
-            
+
             if 0 < coverImageView.alpha {
                 completion?()
                 return
             }
-            
+
             UIView.animate(withDuration: 0.3) { [weak self] in
                 self?.coverImageView?.alpha = 1.0
             } completion: { finished in
@@ -580,14 +723,16 @@ extension PMMainViewController {
             completion?()
         }
     }
-    
+
     private func hideCoverImageView(_ completion: (() -> Void)? = nil) {
         if let coverImageView = self.coverImageView {
             if coverImageView.alpha != 1 {
                 completion?()
                 return
             }
-            
+
+            // Enforce a minimum on-screen time for the splash so the cover
+            // does not flicker when the map happens to load very quickly.
             let limitSeconds = 1.0
             var delay = Date().timeIntervalSince(loadAt)
             if limitSeconds < delay {
@@ -595,7 +740,7 @@ extension PMMainViewController {
             } else {
                 delay = limitSeconds - delay
             }
-            
+
             UIView.animate(withDuration: 0.3, delay: delay) { [weak self] in
                 self?.coverImageView?.alpha = 0.0
             } completion: { [weak self] finished in
@@ -608,7 +753,7 @@ extension PMMainViewController {
             completion?()
         }
     }
-    
+
     private func openSafariViewController(_ url: URL) {
         if let _ = delegate {
             delegate?.openLink(url, sharedCookie: false)
@@ -621,13 +766,15 @@ extension PMMainViewController {
 
 // MARK: - CLLocationManagerDelegate
 extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
-    /// Returns the current location authorization status.
-    /// Updated via locationManagerDidChangeAuthorization callback.
+    /// Returns the current location authorization status. Updated by the
+    /// `locationManagerDidChangeAuthorization(_:)` callback.
     private func locationAuthorizationStatus() -> CLAuthorizationStatus {
         return currentAuthorizationStatus
     }
-    
-    /// 権限状態を3値のテキストに落とし込む
+
+    /// Collapses the system's 5-value `CLAuthorizationStatus` into the
+    /// 3-value vocabulary the web bridge speaks (`notDetermined`,
+    /// `authorized`, `denied`).
     private func locationAuthorizationStatusText(_ status: CLAuthorizationStatus) -> String {
         switch status {
         case .notDetermined:
@@ -638,8 +785,8 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
             return "denied"
         }
     }
-    
-    /// デバッグ用
+
+    /// Debug-only verbose status string.
     private func locationAuthorizationStatusTextFull(_ status: CLAuthorizationStatus) -> String {
         switch status {
         case .notDetermined: return "notDetermined"
@@ -650,13 +797,14 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
         default: return status.rawValue.description
         }
     }
-    
-    /// 権限状態をWebに返却する
+
+    /// Sends the authorization status to the web side as a reply to the given
+    /// command + requestId.
     private func locationStatusCommandCallback(_ status: CLAuthorizationStatus, command: PMCommand, requestId: String) {
         let statusText = locationAuthorizationStatusText(status)
         commandCallback(command, requestId: requestId, args: ["status": statusText])
     }
-    
+
     private func startLocationRequest(isOnce: Bool, isSilent: Bool) {
         let status = locationAuthorizationStatus()
 
@@ -680,7 +828,9 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
         case .authorizedAlways, .authorizedWhenInUse:
             if isMeasuringLocation {
                 if isOnce {
-                    // watch していても once はすぐに処理したい
+                    // Force a one-shot fix even though we are already
+                    // watching, so the `location.once` caller gets a fast
+                    // response without waiting for the next watch tick.
                     locationManager.requestLocation()
                 }
                 return
@@ -700,18 +850,21 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
     }
 
     private func locationRequestWhenInUseAuthorization() {
-        // Defer to next run loop iteration to avoid calling from within
-        // WKNavigationDelegate callback, which blocks the system dialog.
+        // Defer to the next run-loop tick: calling
+        // `requestWhenInUseAuthorization()` from inside a
+        // `WKNavigationDelegate` callback can prevent the system permission
+        // dialog from appearing.
         Task {
             self.locationManager.requestWhenInUseAuthorization()
         }
     }
-    
+
     private func localizedString(forKey key: String) -> String {
         return NSLocalizedString(key, bundle: bundle, comment: "");
     }
-    
-    /// 位置情報権限が拒否されている旨のアラートを表示する。（OK押下でiOSの設定画面を開く）
+
+    /// Shows the "permission denied" alert. The OK action deep-links into
+    /// the system Settings app.
     private func presentAlertForLocationDenied() {
         if isAlertPresentedForLocationDenied {
             return
@@ -742,7 +895,8 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
         present(alert, animated: true, completion: nil)
     }
 
-    /// 位置情報権限が拒否されている旨のアラートを表示する。（ビーコン用）
+    /// Variant of `presentAlertForLocationDenied` that resolves the in-flight
+    /// beacon command with `hasError: true` on cancel.
     private func presentAlertForLocationDeniedForBeacon() {
         if isAlertPresentedForLocationDenied {
             return
@@ -773,32 +927,34 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
         present(alert, animated: true, completion: nil)
     }
 
-    /// 権限が制限されている旨のアラートを表示する。（OK押下でアラートを閉じるだけ）
+    /// Shows the "Location Services restricted" alert (parental controls,
+    /// MDM, etc.). The user cannot fix this in-app, so the alert only has an
+    /// OK acknowledgement.
     private func presentAlertForLocationRestricted() {
         if isAlertPresentedForLocationRestricted {
             return
         }
         isAlertPresentedForLocationRestricted = true
-        
+
         let alertTitle = localizedString(forKey: "PMRestrictedTitle")
         let alertMessage = localizedString(forKey: "PMRestrictedMessage")
-        
+
         let alert = UIAlertController(title: alertTitle, message: alertMessage, preferredStyle: .alert)
-        
+
         let okAction = UIAlertAction(title: "OK", style: .default) { [weak self] _ in
             self?.isAlertPresentedForLocationRestricted = false
         }
         alert.addAction(okAction)
-        
+
         present(alert, animated: true, completion: nil)
     }
-    
+
     private func stopLocationRequestIfNoRequest() {
         if locationOnceRequestIds.isEmpty && locationWatchRequestIds.isEmpty {
             stopLocationRequest()
         }
     }
-    
+
     private func stopLocationRequest() {
         guard isMeasuringLocation else {
             return
@@ -808,13 +964,14 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
         locationManager.stopMonitoringSignificantLocationChanges()
         isMeasuringLocation = false
     }
-    
+
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         let status = manager.authorizationStatus
         self.currentAuthorizationStatus = status
 
         if !locationOnceRequestIds.isEmpty || !locationWatchRequestIds.isEmpty {
-            // 位置情報を要求するコマンドを受け取っていれば位置情報を取得する
+            // A location command is in flight — kick off measurement now
+            // that we know whether we are allowed to.
             switch status {
             case .authorizedAlways, .authorizedWhenInUse:
                 startLocationRequest(isOnce: !locationWatchRequestIds.isEmpty, isSilent: true)
@@ -826,7 +983,7 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
                 locationWatchRequestIds.removeAll()
             }
         }
-        
+
         //#region Beacon
         if !beaconOnceRequestIds.isEmpty || !beaconWatchRequestIds.isEmpty {
             switch status {
@@ -835,28 +992,35 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
                 break
             case .notDetermined:
                 break
-            default: // rejected, restricted
+            default: // denied, restricted
                 stopRangingBeaconsIfNeeded()
                 stopMonitoringBeaconIfNeeded()
                 beaconCommandCallback(beacons: nil, hasError: true)
             }
         }
         //#endregion
-        
+
         if status != .notDetermined {
-            // 権限を要求すると、まず .notDetermined が返ってくるのでこれは無視する。
+            // The first authorization callback after construction is always
+            // `.notDetermined`; skip that one so we only reply to the web on
+            // a real decision.
             if let requestId = locationAuthorizeRequestId {
                 locationStatusCommandCallback(status, command: .locationAuthorize, requestId: requestId)
                 locationAuthorizeRequestId = nil
             }
+            if let requestId = beaconAuthorizeRequestId {
+                locationStatusCommandCallback(status, command: .beaconAuthorize, requestId: requestId)
+                beaconAuthorizeRequestId = nil
+            }
         }
     }
-    
+
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         if locationCallbackStatus == 0 {
             locationCallbackStatus = 1
-            // didUpdateLocations -> didUpdateHeading の順に呼ばれるので
-            // 最初はちょっと待ってコールバックを処理する
+            // `didUpdateLocations` fires before `didUpdateHeading` on the
+            // first cycle, so we briefly wait for the heading sample before
+            // delivering the very first callback to the web.
             Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(120))
                 let location = self?.locationManager.location
@@ -865,38 +1029,52 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
                 self?.locationCallbackStatus = 2
             }
         } else if locationCallbackStatus == 2 {
-            // 最初のコールバックが終わるまでは処理しない
+            // Drop callbacks until the first one has been delivered.
             let location = manager.location
             let heading = manager.heading ?? lastHeading
             locationCommandCallback(location: location, heading: heading)
         }
     }
-    
+
     func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
-        // didUpdateLocations はたまに heading が欠落しているので保持しておく
+        // Cache the latest heading because `manager.heading` can momentarily
+        // return `nil` after the first delivery, and `didUpdateLocations`
+        // wants something to fall back on.
         lastHeading = newHeading
         if locationCallbackStatus == 2 {
-            // 最初のコールバックが終わるまでは処理しない
             let location = manager.location
             let heading = newHeading
             locationCommandCallback(location: location, heading: heading)
         }
     }
-    
+
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         stopLocationRequest()
         locationCommandCallback(location: nil, heading: nil, hasError: true)
         locationWatchRequestIds.removeAll()
     }
-    
+
     private func locationCommandCallback(location: CLLocation?, heading: CLHeading?, hasError: Bool = false) {
         var args: [String: Any] = [:]
         if let location = location {
-            args["lat"] = location.coordinate.latitude
-            args["lng"] = location.coordinate.longitude
+            // JSONSerialization throws on NaN / Infinity, which would cause
+            // `commandCallbackAsync` to drop the reply and leave the web side
+            // waiting forever. Filter to finite values so degenerate samples
+            // never reach the bridge.
+            let lat = location.coordinate.latitude
+            let lng = location.coordinate.longitude
+            if lat.isFinite && lng.isFinite {
+                args["lat"] = lat
+                args["lng"] = lng
+            }
         }
         if let heading = heading {
-            args["heading"] = heading.magneticHeading
+            // `magneticHeading` is `-1` while the sensor is calibrating and
+            // can be NaN on simulators. Only forward valid samples.
+            let magneticHeading = heading.magneticHeading
+            if magneticHeading.isFinite && magneticHeading >= 0 {
+                args["heading"] = magneticHeading
+            }
         }
         if hasError {
             args["hasError"] = true
@@ -920,57 +1098,51 @@ extension PMMainViewController: @preconcurrency CLLocationManagerDelegate {
 
 // MARK: - Push
 extension PMMainViewController {
-    
+
+    /// Forwards a URL (typically captured from a Universal Link / Custom URL
+    /// Scheme launch) to the web layer. If the web layer is not yet ready,
+    /// the URL is stashed in `launchURL` and replayed once `web.ready`
+    /// arrives.
     func pushLaunchURL(_ url: URL) {
         guard hasWebReady else {
             self.launchURL = url
             return
         }
-        
+
         let commandPushAction: () -> Void = { [weak self] in
             self?.commandPush("app.link", args: ["url": url.absoluteString])
         }
-        
+
         if presentedViewController == nil {
-            // 何も画面を表示していなければそのまま処理する
+            // No modal stacked on top — push immediately.
             commandPushAction()
             return
         }
-        
-        // 何か画面が表示されていればそれらを閉じてから処理する
-        var presentedVC = presentedViewController
-        while true {
-            if presentedVC == nil {
-                break
-            }
-            presentedVC = presentedVC?.presentedViewController
-        }
+
+        // Dismiss any presented modals before pushing so the user lands back
+        // on the map.
         dismiss(animated: true) {
             commandPushAction()
         }
     }
-    
-    /// Web 側にコマンドを送る。
+
+    /// Sends an unsolicited command to the web side.
     private func commandPush(_ command: String, args: [String: Any]) {
-        do {
-            let jsonData = try JSONSerialization.data(withJSONObject: args, options: [])
-            guard let jsonString = String(data: jsonData, encoding: .utf8) else {
-                return
-            }
-            
-            let commandPushFunction = "commandPush('\(command)', \(jsonString))"
-            mainWebView.evaluateJavaScript(commandPushFunction, completionHandler: nil)
-            print(#function, commandPushFunction)
-        } catch let error {
-            dump(error)
+        guard let commandLiteral = Self.jsLiteral(command),
+              let argsLiteral = Self.jsLiteral(args) else {
+            return
         }
+        let script = "commandPush(\(commandLiteral), \(argsLiteral))"
+        mainWebView.evaluateJavaScript(script, completionHandler: nil)
     }
 }
 
 // MARK: - Beacon
 extension PMMainViewController {
-    
-    /// UUIDを指定してBeaconRegionを初期化する。
+
+    /// Validates the configured UUID and initialises `beaconRegion`. When the
+    /// UUID is missing or unparseable beacons are silently disabled and all
+    /// `beacon.*` commands become no-ops.
     private func initBeaconIfNeeded() {
         guard let beaconUuid = beaconUuid,
               let uuid = UUID.init(uuidString: beaconUuid) else {
@@ -982,8 +1154,9 @@ extension PMMainViewController {
         useBeacon = true
         logBeacon("beacon is enabled: region=\(beaconRegion!)")
     }
-    
-    /// ビーコン情報取得要求をうけて、ビーコンのモニタリングを開始する。
+
+    /// Entry point for `beacon.once` / `beacon.watch`. Resolves the location
+    /// permission and either kicks off monitoring or surfaces an alert.
     private func startBeaconRequest(isOnce: Bool, isSilent: Bool) {
         let status = locationAuthorizationStatus()
         logBeacon("startBeaconRequest(\(isOnce)): authorization status = \(locationAuthorizationStatusTextFull(status))")
@@ -1010,12 +1183,12 @@ extension PMMainViewController {
             startMonitoringBeaconIfNeeded()
             return
         @unknown default:
-            // New enum may be added in future
+            // Forward-compat: treat any new authorization state as an error.
             beaconCommandCallback(beacons: nil, hasError: true)
             return
         }
     }
-    
+
     private func startMonitoringBeaconIfNeeded() {
         guard useBeacon == true else {
             return
@@ -1026,7 +1199,7 @@ extension PMMainViewController {
             logBeacon("startMonitoringBeaconIfNeeded: beacon monitoring is started")
         }
     }
-    
+
     private func stopMonitoringBeaconIfNeeded() {
         guard useBeacon == true else {
             return
@@ -1037,8 +1210,9 @@ extension PMMainViewController {
             logBeacon("stopMonitoringBeaconIfNeeded: beacon monitoring is stopped")
         }
     }
-    
-    /// ビーコン情報待ちのリクエストがなくなったら、ビーコンのモニタリングを終了する
+
+    /// Stops monitoring once all `beacon.once` / `beacon.watch` callers have
+    /// been satisfied.
     private func stopBeaconRequestIfNoRequest() {
         guard useBeacon == true else {
             return
@@ -1048,8 +1222,10 @@ extension PMMainViewController {
             stopMonitoringBeaconIfNeeded()
         }
     }
-    
-    /// ビーコンのモニタリングが開始された → 状態確認
+
+    /// CoreLocation reports that beacon monitoring started — query the
+    /// current region state so we can begin ranging immediately when we are
+    /// already inside the region.
     func locationManager(_ manager: CLLocationManager, didStartMonitoringFor region: CLRegion) {
         guard useBeacon == true,
               let beaconRegion = self.beaconRegion else {
@@ -1058,8 +1234,8 @@ extension PMMainViewController {
         logBeacon("fucn: didStartMonitoringFor")
         self.locationManager.requestState(for: beaconRegion)
     }
-    
-    /// 状態を取得した → 領域内のレンジングを開始
+
+    /// Region state resolved — start ranging if we are inside.
     func locationManager(_ manager: CLLocationManager, didDetermineState state: CLRegionState, for inRegion: CLRegion) {
         guard useBeacon == true else {
             return
@@ -1075,7 +1251,7 @@ extension PMMainViewController {
             break
         }
     }
-    
+
     private func startRangingBeaconsIfNeeded() {
         if !isRangingBeacon {
             self.locationManager.startRangingBeacons(satisfying: self.beaconRegion.beaconIdentityConstraint)
@@ -1083,8 +1259,8 @@ extension PMMainViewController {
             logBeacon("beacon ranging is now started")
         }
     }
-    
-    /// ビーコン領域に入った（ビーコンを発見した） → レンジングを開始
+
+    /// Entered the configured region — begin ranging.
     func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
         guard useBeacon == true else {
             return
@@ -1092,8 +1268,8 @@ extension PMMainViewController {
         logBeacon("func: didEnterRegion")
         startRangingBeaconsIfNeeded()
     }
-    
-    /// ビーコン領域から出た（すべてのビーコンから離れた） → レンジングを終了
+
+    /// Left the region — stop ranging until we re-enter.
     func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
         guard useBeacon == true else {
             return
@@ -1101,7 +1277,7 @@ extension PMMainViewController {
         logBeacon("func: didExitRegion")
         stopRangingBeaconsIfNeeded()
     }
-    
+
     private func stopRangingBeaconsIfNeeded() {
         guard useBeacon == true else {
             return
@@ -1112,34 +1288,38 @@ extension PMMainViewController {
             logBeacon("beacon ranging is now stopped")
         }
     }
-    
-    /// レンジングできた → Webにデータを返却
+
+    /// Ranged beacons — forward to the web side.
     func locationManager(_ manager: CLLocationManager, didRangeBeacons beacons: [CLBeacon], in region: CLBeaconRegion){
         guard isRangingBeacon && isMonitoringBeacon else {
-            // 停止要求後に時間差で来たものは捨てる
+            // Stragglers after `stopRanging*` was called — drop.
             return
         }
-        
+
 #if DEBUG
-        // 呼び出しが頻繁なので、DEBUGビルド時のみとする
+        // Ranging callbacks fire frequently; only log in DEBUG builds.
         logBeacon("func: didRangeBeacons")
         for beacon in beacons {
             logBeacon("major:\(beacon.major) minor:\(beacon.minor) rssi:\(beacon.rssi) timestamp:\(beacon.timestamp) accuracy:\(beacon.accuracy)")
         }
 #endif
-        
+
         beaconCommandCallback(beacons: beacons, hasError: false)
     }
-    
-    /// ビーコン情報をWebに返却する
+
+    /// Pushes a beacon snapshot (or an error frame) to every in-flight
+    /// `beacon.once` / `beacon.watch` requester.
     private func beaconCommandCallback(beacons: [CLBeacon]?, hasError: Bool = false) {
         var args: [String: Any] = [:];
-        
-        // 正常
+
+        // Success: ranged beacons available.
         if let beacons = beacons {
             var beaconsArray = [[String: Any]]()
             for beacon in beacons {
-                if beacon.accuracy > 0 {
+                // `accuracy > 0` excludes the documented `-1` (unknown) and
+                // NaN values, but `isFinite` also rejects `+Infinity` so the
+                // payload is always JSON-serializable.
+                if beacon.accuracy > 0 && beacon.accuracy.isFinite {
                     beaconsArray.append([
                         "uuid": beacon.uuid.uuidString,
                         "major": beacon.major,
@@ -1155,14 +1335,15 @@ extension PMMainViewController {
             _beaconCommandCallback(args: args)
             return
         }
-        
+
         guard hasError else {
             args["beacons"] = [[String: Any]]()
             _beaconCommandCallback(args: args)
             return
         }
-        
-        // 異常
+
+        // Error path: tell the web side what went wrong and clear watchers
+        // so they do not block subsequent requests.
         args["hasError"] = true
 
         let status = locationAuthorizationStatus()
@@ -1170,7 +1351,6 @@ extension PMMainViewController {
 
         _beaconCommandCallback(args: args)
 
-        // エラー通知したらWatch IDをクリアする
         beaconWatchRequestIds.removeAll()
     }
 
@@ -1178,15 +1358,15 @@ extension PMMainViewController {
         beaconOnceRequestIds.forEach { id in
             commandCallback(.beaconOnce, requestId: id, args: args)
         }
-        
+
         beaconWatchRequestIds.forEach { id in
             commandCallback(.beaconWatch, requestId: id, args: args)
         }
-        
+
         beaconOnceRequestIds.removeAll()
         stopBeaconRequestIfNoRequest()
     }
-    
+
     private func beaconDidEnterBackground() {
         if isRangingBeacon || isMonitoringBeacon {
             isBeaconPaused = true
@@ -1195,22 +1375,24 @@ extension PMMainViewController {
             logBeacon("beacon monitoring/ranging is paused when in background")
         }
     }
-    
+
     private func beaconWillEnterForeground() {
         if isBeaconPaused {
             logBeacon("resuming beacon monitoring/ranging")
             isBeaconPaused = false
         }
-        
-        // FGに復帰するのは、BG前からビーコンを動作させていた場合と、BG前は権限がなく、権限を変えて（あるいは変えないで）戻ってきた場合とある
-        
+
+        // Two distinct foreground paths land here:
+        //   1. We were already ranging when the app backgrounded.
+        //   2. The user was sent to Settings to change permission and is now
+        //      coming back, with or without granting.
         if !beaconWatchRequestIds.isEmpty {
             startBeaconRequest(isOnce: false, isSilent: true)
         } else if !beaconOnceRequestIds.isEmpty {
             startBeaconRequest(isOnce: true, isSilent: true)
         }
     }
-    
+
     private func logBeacon(_ text: String) -> Void {
 #if DEBUG
         print("[Beacon] \(text)")

@@ -49,7 +49,41 @@ import com.google.android.gms.location.Priority
 import org.json.JSONObject
 import java.lang.StringBuilder
 import java.util.Date
+import java.util.UUID
 
+/**
+ * The Platinumaps `WebView` that hosts the Platinum Maps web app and bridges
+ * the limited set of native capabilities it consumes — geolocation,
+ * heading, iBeacon ranging, in-app browser, file chooser, app-store review
+ * — over a `command://` URL scheme.
+ *
+ * **Bridge protocol**
+ *
+ * * Web → native: `command://<name>?requestId=<id>&...` is intercepted in
+ *   `shouldOverrideUrlLoading`, the navigation is cancelled, and the
+ *   command is dispatched by `runCommand`.
+ * * Native → web: replies are sent via
+ *   `commandCallback('<name>','<requestId>',<argsJSON>)`. Both the command
+ *   name and the request id are JSON-encoded so an attacker-influenced
+ *   request id cannot break out of the JavaScript string context.
+ *
+ * **Lifecycle contract**
+ *
+ * The host Activity (or Fragment) must forward four callbacks:
+ *
+ * * `activityPause()` from `onPause` — stops location/beacon/sensor work.
+ * * `activityResume()` from `onResume` — restores whatever was running.
+ * * `activityDestroy()` from `onDestroy` — releases all native resources.
+ * * `handlePermissionResult` and `handleFileChooserResult` from their
+ *   respective callbacks.
+ *
+ * **Threading**
+ *
+ * All public methods and all internal mutable state (location lists, beacon
+ * buffer, heading callbacks) are expected to be touched only from the main
+ * looper. BLE scan results, which arrive on a binder thread, are bounced
+ * onto the main looper before they touch shared state.
+ */
 class PmWebView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
@@ -98,13 +132,14 @@ class PmWebView @JvmOverloads constructor(
 
     private var originalUrl: Uri? = null
 
-    // Becomes true when the WebView is loading a page
+    // True while the WebView is loading a top-level page.
     private var isWebViewLoading = false
 
-    // The time when the WebView loading process was initiated
+    // Timestamp captured at the start of the most recent WebView load —
+    // retained for future timeout / telemetry use.
     private var webViewLoadingAt: Date? = null
 
-    // Becomes true when web.ready is invoked
+    // True once the web layer has signalled `web.ready` at least once.
     private var hasWebReady = false
 
     private var isMeasuringLocation = false
@@ -125,12 +160,13 @@ class PmWebView @JvmOverloads constructor(
     private var locationWatchRequestIds = mutableListOf<String>()
 
     /**
-     * Callback to receive location updates from FusedLocationProviderClient
+     * Callback to receive location updates from FusedLocationProviderClient.
+     * Always dispatched on the main looper (configured at
+     * `requestLocationUpdates`).
      */
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(locationResult: LocationResult) {
             locationResult.lastLocation?.let { location ->
-                // Execute the same process as onLocationChanged
                 this@PmWebView.lastLocation = location
                 updateLocation(location, false)
             }
@@ -154,7 +190,14 @@ class PmWebView @JvmOverloads constructor(
     /** Request IDs for beacon.watch */
     private var beaconWatchRequestIds = mutableListOf<String>()
 
-    /** Beacons are received one by one from the BLE scanner, but they are sent to the web in batches. */
+    /**
+     * Beacons are received one by one from the BLE scanner, but they are
+     * sent to the web in batches.
+     *
+     * Thread-safety: every mutation of `beaconBuffer` must happen on the
+     * main looper. `onScanResult` therefore re-posts the buffer mutation;
+     * `flushBeaconBuffer` is itself only ever invoked from main.
+     */
     private val beaconBuffer = mutableListOf<PmBeaconDto>()
 
     /** The time window in milliseconds for buffering beacon data before sending it to the web. */
@@ -165,6 +208,9 @@ class PmWebView @JvmOverloads constructor(
 
     /** True if a buffer flush is scheduled */
     private var isBeaconBufferFlushReserved = false
+
+    /** Lazily-cached handler bound to the main looper. */
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     //endregion
 
@@ -197,7 +243,7 @@ class PmWebView @JvmOverloads constructor(
     private var userId: String? = null
     private var secretKey: String? = null
 
-    // Delegate for handling link clicks within the web page
+    /** Delegate that the host may set to take over outbound link handling. */
     var onOpenLinkListener: OnOpenLinkListener? = null
 
     // Temporarily holds permission request callbacks
@@ -211,15 +257,14 @@ class PmWebView @JvmOverloads constructor(
             setWebContentsDebuggingEnabled(true)
         }
 
-        // Enable JavaScript
+        // Enable JavaScript and DOM storage so the Platinumaps web app can run.
         settings.javaScriptEnabled = true
-        // Enable DOM Storage
         settings.domStorageEnabled = true
         settings.setGeolocationEnabled(true)
         settings.setSupportMultipleWindows(true)
         val userAgent = "${settings.userAgentString} Platinumaps/2.0.0"
         settings.userAgentString = userAgent
-        // To handle command://xxx schemes
+        // Intercept navigations so `command://...` can be dispatched.
         webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
@@ -258,9 +303,10 @@ class PmWebView @JvmOverloads constructor(
                 request: WebResourceRequest?
             ): Boolean {
                 request?.url?.let { uri ->
-                    // This is called for both window.open and <a> tags.
-                    // Since navigation away from Platinumaps is not expected,
-                    // cancel the request by returning true from this method.
+                    // Called for both `window.open` and `<a>` taps. Since
+                    // we never want WebKit to navigate away from
+                    // platinumaps.jp, intercept and either dispatch a
+                    // command, open in an in-app browser, or fall through.
                     if (openRequest(uri) == 0u) {
                         return true
                     }
@@ -276,7 +322,7 @@ class PmWebView @JvmOverloads constructor(
                 message: String?,
                 result: JsResult?
             ): Boolean {
-                // Display an alert dialog using AlertDialog
+                // Surface the web app's `alert()` as a native dialog.
                 AlertDialog.Builder(context)
                     .setMessage(message)
                     .setPositiveButton(android.R.string.ok) { dialog, which ->
@@ -294,7 +340,7 @@ class PmWebView @JvmOverloads constructor(
                 message: String?,
                 result: JsResult?
             ): Boolean {
-                // Display a confirmation dialog using AlertDialog
+                // Surface the web app's `confirm()` as a native dialog.
                 AlertDialog.Builder(context)
                     .setMessage(message)
                     .setPositiveButton(android.R.string.ok) { dialog, which ->
@@ -309,23 +355,22 @@ class PmWebView @JvmOverloads constructor(
                 return true
             }
 
-            // Method to handle file selection
+            // File picker handler — bridged through to the host Activity.
             override fun onShowFileChooser(
                 webView: WebView?,
                 filePathCallback: ValueCallback<Array<Uri>>?,
                 fileChooserParams: FileChooserParams?
             ): Boolean {
-                // If there is an existing callback, cancel it
+                // If a previous file chooser is still outstanding, cancel
+                // it before replacing the callback.
                 this@PmWebView.filePathCallback?.onReceiveValue(null)
 
                 this@PmWebView.filePathCallback = filePathCallback
 
-                // Create a file chooser Intent
                 val intent = fileChooserParams?.createIntent()
                 intent?.let {
                     val activity = context as? Activity
                     if (activity != null) {
-                        // Start the Intent from the Activity
                         ActivityCompat.startActivityForResult(
                             activity,
                             it,
@@ -349,7 +394,8 @@ class PmWebView @JvmOverloads constructor(
                     return
                 }
 
-                // Check the requested permissions
+                // Translate WebView permission requests into Android
+                // runtime permissions.
                 val requestedPermissions = mutableListOf<String>()
 
                 if (request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) {
@@ -360,7 +406,6 @@ class PmWebView @JvmOverloads constructor(
                 }
 
                 if (requestedPermissions.isNotEmpty()) {
-                    // Check if permissions have already been granted
                     val ungrantedPermissions = requestedPermissions.filter {
                         ContextCompat.checkSelfPermission(
                             activity,
@@ -369,21 +414,21 @@ class PmWebView @JvmOverloads constructor(
                     }
 
                     if (ungrantedPermissions.isNotEmpty()) {
-                        // If there are ungranted permissions, show a dialog
+                        // Stash the request and wait for the result; we
+                        // call `request.grant()` from
+                        // `onRequestPermissionsResult`.
                         activePermissionRequest = request
                         ActivityCompat.requestPermissions(
                             activity,
                             ungrantedPermissions.toTypedArray(),
                             PERMISSION_REQUEST_CODE
                         )
-                        // Do nothing here to wait for the user's response
-                        // Call request.grant() in onRequestPermissionsResult
                     } else {
-                        // If all are already granted, grant access immediately
                         request.grant(request.resources)
                     }
                 } else {
-                    // If no permissions are requested, deny
+                    // No permissions required → deny so the web side does
+                    // not hang.
                     request.deny()
                 }
             }
@@ -418,33 +463,36 @@ class PmWebView @JvmOverloads constructor(
                         GEOLOCATION_PERMISSION_REQUEST_CODE
                     )
                 } else {
-                    // If already granted, execute the callback immediately
+                    // Already granted — invoke synchronously.
                     callback.invoke(origin, true, false)
                 }
             }
         }
 
-        // Allow cookies
+        // Cookies (including third-party) are required so authenticated
+        // flows like stamp-rally rewards work across origins.
         val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptThirdPartyCookies(this, true)
         cookieManager.setAcceptCookie(true)
     }
 
     private fun openPlatinumaps(options: PmMapOptions, queryPrams: String?) {
-        // Safely build the URL using Uri.Builder
+        // Build the URL safely with Uri.Builder so query values are encoded
+        // correctly even when they contain `&`, `=`, etc.
         val uriBuilder = "https://platinumaps.jp/maps/".toUri().buildUpon()
 
-        // 1. Add the map path
+        // 1. Map path.
         uriBuilder.appendPath(options.mapPath)
 
-        // 2. Add fixed parameters for the native app
+        // 2. Native marker (the web app branches on this).
         uriBuilder.appendQueryParameter("native", "1")
 
-        // 3a. [For compatibility] Process the old queryPrams of type String
+        // 3a. Back-compat: a raw `key=value&...` string from the old API.
         queryPrams?.takeIf { it.isNotBlank() }?.let { query ->
             val queryItems = query.split('&')
             for (queryItem in queryItems) {
-                // Split only at the first '=', considering cases where the value contains '='
+                // Split on the first `=` only; values may legitimately
+                // contain `=`.
                 val parts = queryItem.split('=', limit = 2)
                 if (parts.size == 2 && parts[0].isNotEmpty()) {
                     uriBuilder.appendQueryParameter(parts[0], parts[1])
@@ -452,17 +500,26 @@ class PmWebView @JvmOverloads constructor(
             }
         }
 
-        // 3b. Add parameters from queryParams (Map) in PmMapOptions
+        // 3b. Caller-supplied query params (`PmMapOptions.queryParams`).
         options.queryParams?.forEach { (key, value) ->
             uriBuilder.appendQueryParameter(key, value)
         }
 
-        // 4. Add parameters related to the safe area
+        // 4. Safe-area insets so the web layer can lay out under system bars.
         uriBuilder.appendQueryParameter("safearea", "${options.safeAreaTop},${options.safeAreaBottom}")
 
-        // 5. Add parameters related to beacons
+        // 5. Beacon configuration.
         options.beacon?.let { beacon ->
-            beaconListeningUuid = beacon.uuid // Set the property here
+            // Validate the UUID up front so we never start a scanner with
+            // a junk filter (which would silently let every Apple-
+            // manufacturer advertisement through).
+            beaconListeningUuid = try {
+                UUID.fromString(beacon.uuid)
+                beacon.uuid
+            } catch (ex: IllegalArgumentException) {
+                Log.w(TAG_BEACON, "openPlatinumaps: invalid beacon uuid '${beacon.uuid}', beacons disabled")
+                null
+            }
             beacon.minSample?.let {
                 uriBuilder.appendQueryParameter("beaconminsample", it.toString())
             }
@@ -474,7 +531,6 @@ class PmWebView @JvmOverloads constructor(
             }
         }
 
-        // Build the final URL and load it into the WebView
         originalUrl = uriBuilder.build()
         loadWebView()
     }
@@ -527,15 +583,24 @@ class PmWebView @JvmOverloads constructor(
 
     //region Command
 
-    // To handle requests from the WebView
+    // Decide what to do with a URI the WebView is trying to navigate to.
     private fun openRequest(uri: Uri): UInt {
         if (uri.scheme == "command") {
             runCommand(uri)
         } else if (hasWebReady) {
-            // Non-command URIs are displayed in an in-app browser
-            // It handles schemes other than http as well
-            // Since WebViewClient#shouldOverrideUrlLoading is called even for redirects,
-            // do not process until web.ready has been called
+            // Non-command URIs from the web app are handed to the in-app
+            // browser. We wait until `web.ready` has fired so we don't
+            // intercept the very first navigation that loads the map page
+            // itself. `shouldOverrideUrlLoading` is also called on
+            // redirects, which is another reason to gate on `hasWebReady`.
+            // Apply the same scheme allowlist as the `browse.*` commands so
+            // a compromised web layer cannot escalate via `<a href="intent://...">`
+            // or other dangerous schemes that `CustomTabsIntent` would otherwise
+            // forward to the system.
+            if (!isSchemeAllowedForBrowse(uri)) {
+                Log.w(TAG, "openRequest: blocked disallowed scheme '${uri.scheme}'")
+                return 0u
+            }
             openWebBrowseInApp(uri)
         } else {
             return 1u;
@@ -651,16 +716,15 @@ class PmWebView @JvmOverloads constructor(
                 parentActivity?.let {
                     val status = beaconPermissionStatus()
                     if (status == PmAuthorizationStatus.AUTHORIZED) {
-                        // Already has permission
                         beaconStatusCommandCallback(status, command, requestId)
                     } else {
-                        // Requesting permission now
                         beaconAuthorizeRequestId = requestId
                         requestBeaconPermission()
                     }
                     return 0u
                 }
-                // This path is not expected to be taken (Activity should always exist)
+                // Defensive: should not happen because the WebView is
+                // always hosted inside an Activity.
                 beaconStatusCommandCallback(PmAuthorizationStatus.DENIED, command, requestId)
                 return 0u
             }
@@ -703,13 +767,11 @@ class PmWebView @JvmOverloads constructor(
     }
 
     private fun commandCallback(command: PMCommand, requestId: String, args: Map<String, Any>) {
-        val json = JSONObject(args)
-        val callback = String.format(
-            "commandCallback('%s','%s',%s)",
-            command.rawValue,
-            requestId,
-            json.toString()
-        )
+        // JSON-encode every argument so that an attacker-influenced
+        // `requestId` (which originates in the navigation URL) cannot escape
+        // the JS string and execute arbitrary code in our page context.
+        val argsJson = JSONObject(args).toString()
+        val callback = "commandCallback(${JSONObject.quote(command.rawValue)},${JSONObject.quote(requestId)},$argsJson)"
         evaluateJavascript(callback) { _ -> }
     }
 
@@ -717,9 +779,27 @@ class PmWebView @JvmOverloads constructor(
 
     //region Web Browse
 
+    /**
+     * URL schemes that the SDK is willing to hand to an in-app browser, an
+     * external browser, or to `Intent.ACTION_VIEW`. Restricting the
+     * allowlist prevents a compromised web layer from launching `file:`,
+     * `intent:`, `javascript:`, `about:`, or `data:` URLs.
+     */
+    private val browseAllowedSchemes: Set<String> =
+        setOf("http", "https", "tel", "mailto", "sms", "geo")
+
+    private fun isSchemeAllowedForBrowse(uri: Uri): Boolean {
+        val scheme = uri.scheme?.lowercase() ?: return false
+        return browseAllowedSchemes.contains(scheme)
+    }
+
     private fun commandWebBrowse(command: PMCommand, commandUri: Uri) {
         commandUri.getQueryParameter("url")?.let { uriString ->
             parseBrowseUrl(uriString)?.let { uri ->
+                if (!isSchemeAllowedForBrowse(uri)) {
+                    Log.w(TAG, "commandWebBrowse: blocked disallowed scheme '${uri.scheme}'")
+                    return@let
+                }
                 when (command) {
                     PMCommand.BROWSE_APP,
                     PMCommand.MAP_NAVIGATE -> {
@@ -741,7 +821,6 @@ class PmWebView @JvmOverloads constructor(
                 }
             }
         }
-        // --
     }
 
     private fun parseBrowseUrl(urlString: String): Uri? {
@@ -807,17 +886,17 @@ class PmWebView @JvmOverloads constructor(
                     Manifest.permission.ACCESS_FINE_LOCATION
                 ) == PackageManager.PERMISSION_GRANTED
             ) {
-                // Granted
                 return PmLocationAuthorizationStatus.AUTHORIZED
             } else if (ActivityCompat.shouldShowRequestPermissionRationale(
                     it,
                     Manifest.permission.ACCESS_FINE_LOCATION
                 )
             ) {
-                // Denied once, but the "Don't ask again" checkbox was not checked
+                // Previously denied without ticking "Don't ask again".
                 return PmLocationAuthorizationStatus.DENIED
             }
-            // If denied with "Don't ask again", it's indistinguishable from not yet determined, so treat as "notDetermined".
+            // "Don't ask again" denials are indistinguishable from a fresh
+            // permission state, so we report them as `notDetermined`.
             return PmLocationAuthorizationStatus.NOT_DETERMINED
         }
         return PmLocationAuthorizationStatus.DENIED
@@ -868,7 +947,7 @@ class PmWebView @JvmOverloads constructor(
                 return
             }
 
-            // Initialize FusedLocationProviderClient (only if not already initialized)
+            // Lazily initialise FusedLocationProviderClient.
             if (!::fusedLocationClient.isInitialized) {
                 fusedLocationClient = LocationServices.getFusedLocationProviderClient(it)
             }
@@ -880,7 +959,6 @@ class PmWebView @JvmOverloads constructor(
                 return
             }
 
-            // Create a GMS LocationRequest
             val locationRequest = LocationRequest.Builder(
                 Priority.PRIORITY_HIGH_ACCURACY,
                 maxUpdateIntervalMillis
@@ -889,7 +967,6 @@ class PmWebView @JvmOverloads constructor(
                 setMinUpdateDistanceMeters(minUpdateDistanceMeters)
             }.build()
 
-            // Request location updates
             fusedLocationClient.requestLocationUpdates(
                 locationRequest,
                 locationCallback,
@@ -904,7 +981,6 @@ class PmWebView @JvmOverloads constructor(
         if (!isMeasuringLocation) {
             return
         }
-        // Stop after confirming that fusedLocationClient is initialized
         if (::fusedLocationClient.isInitialized) {
             fusedLocationClient.removeLocationUpdates(locationCallback)
         }
@@ -921,6 +997,9 @@ class PmWebView @JvmOverloads constructor(
             }
             return
         }
+        // Fallback path: WebView is not currently hosted by an Activity, so
+        // we cannot prompt for permission. Report the current status to
+        // the web layer.
         commandCallback(command, requestId, mapOf("status" to status.rawValue))
     }
 
@@ -1000,8 +1079,8 @@ class PmWebView @JvmOverloads constructor(
     //region Beacon
 
     /**
-     * Requests the necessary permissions for receiving beacon signals.
-     * If permissions are already granted, it starts scanning for beacons.
+     * Requests the runtime permissions required for BLE beacon scanning and,
+     * once granted, kicks off scanning.
      */
     private fun requestBeaconPermission() {
         parentActivity?.let {
@@ -1033,8 +1112,8 @@ class PmWebView @JvmOverloads constructor(
     }
 
     /**
-     * Initializes the BLE scanner.
-     * If startScanning is true, it begins the scan.
+     * Initializes the BLE scanner. If `startScanning` is true, scanning is
+     * kicked off immediately afterwards.
      */
     private fun initBeaconReceiverIfNeeded(context: Context, startScanning: Boolean) {
         parentActivity?.let {
@@ -1045,30 +1124,35 @@ class PmWebView @JvmOverloads constructor(
                 Log.d(TAG_BEACON, "initBeaconReceiver: ble scanner is created")
             }
 
-            // Start scanning
             if (startScanning) {
-                Handler(Looper.getMainLooper()).post { startScanningBeacon() }
+                mainHandler.post { startScanningBeacon() }
             }
         }
     }
 
     /**
-     * Starts the BLE scan.
-     * Does nothing if already scanning.
+     * Starts the BLE scan. Does nothing if there is no configured listening
+     * UUID or if a scan is already in flight.
      */
     @SuppressLint("MissingPermission")
     private fun startScanningBeacon() {
+        if (beaconListeningUuid == null) {
+            // No (or invalid) UUID configured — refuse to scan rather than
+            // accept every Apple-manufacturer advertisement.
+            Log.w(TAG_BEACON, "startScanningBeacon: no listening uuid configured, skipping")
+            return
+        }
         if (isScanningBle) {
             Log.w(TAG_BEACON, "startScanningBeacon: already scanning")
             return
         }
         synchronized(this) {
             val filter = ScanFilter.Builder()
-                .setManufacturerData(0x004C, byteArrayOf()) // Apple
+                .setManufacturerData(0x004C, byteArrayOf()) // Apple — iBeacon manufacturer id
                 .build()
 
             val settings = ScanSettings.Builder()
-                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY) // Low latency mode
+                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
                 .build()
 
             bluetoothLeScanner?.startScan(listOf(filter), settings, leScanCallback)
@@ -1078,16 +1162,18 @@ class PmWebView @JvmOverloads constructor(
     }
 
     /**
-     * Callback for receiving scan results.
+     * Receives BLE scan results. Callbacks arrive on a system-chosen binder
+     * thread, so any work that touches shared state (`beaconBuffer` in
+     * particular) is bounced onto the main looper.
      */
     private val leScanCallback: ScanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             super.onScanResult(callbackType, result)
 
-            val beacon = parseBeacon(result)
-            if (beacon != null) {
-                Log.d(TAG_BEACON, "onScanResult: detected $beacon")
+            val beacon = parseBeacon(result) ?: return
+            Log.d(TAG_BEACON, "onScanResult: detected $beacon")
 
+            mainHandler.post {
                 updateBeacon(beacon, false)
             }
         }
@@ -1108,23 +1194,20 @@ class PmWebView @JvmOverloads constructor(
                 }
 
                 val uuid = sb.toString()
-                if (beaconListeningUuid != null && !uuid.equals(
-                        beaconListeningUuid,
-                        ignoreCase = true
-                    )
-                ) {
-                    // Log.d(TAG_BEACON, "ScanCallback: Ignored: $uuid")
+                // We never want to forward beacons that don't match the
+                // caller's configured UUID. The null check is belt-and-
+                // braces: `startScanningBeacon` already refuses to scan
+                // when `beaconListeningUuid` is null.
+                val listening = beaconListeningUuid ?: return null
+                if (!uuid.equals(listening, ignoreCase = true)) {
                     return null
                 }
 
-                // Log.d(TAG, "Manu " + bytes.map { String.format("%02x ", it) })
-
-                // Major/Minor (Big Endian)
+                // Major/Minor are encoded big-endian.
                 val major = ((bytes[25].toInt() and 0xFF) shl 8) or (bytes[26].toInt() and 0xFF)
                 val minor = ((bytes[27].toInt() and 0xFF) shl 8) or (bytes[28].toInt() and 0xFF)
 
-                val beacon = PmBeaconDto(uuid, major, minor, result.rssi)
-                return beacon
+                return PmBeaconDto(uuid, major, minor, result.rssi)
             }
         }
 
@@ -1169,13 +1252,13 @@ class PmWebView @JvmOverloads constructor(
                     permission
                 ) == PackageManager.PERMISSION_GRANTED
             ) {
-                // Granted
                 return PmAuthorizationStatus.AUTHORIZED
             } else if (ActivityCompat.shouldShowRequestPermissionRationale(it, permission)) {
-                // Denied once, but the "Don't ask again" checkbox was not checked
+                // Previously denied without ticking "Don't ask again".
                 return PmAuthorizationStatus.DENIED
             }
-            // If denied with "Don't ask again", it's indistinguishable from not yet determined, so treat as "notDetermined".
+            // "Don't ask again" denials are indistinguishable from a fresh
+            // permission state, so we report them as `notDetermined`.
             return PmAuthorizationStatus.NOT_DETERMINED
         }
         return PmAuthorizationStatus.DENIED
@@ -1183,6 +1266,10 @@ class PmWebView @JvmOverloads constructor(
 
     @SuppressLint("MissingPermission")
     private fun startBeaconRequest(isOnce: Boolean) {
+        if (beaconListeningUuid == null) {
+            Log.w(TAG_BEACON, "startBeaconRequest: no listening uuid configured, skipping")
+            return
+        }
         val permissionStatus = beaconPermissionStatus()
         if (permissionStatus !== PmAuthorizationStatus.AUTHORIZED) {
             Log.w(
@@ -1270,7 +1357,8 @@ class PmWebView @JvmOverloads constructor(
     }
 
     /**
-     * Called when the permission status for beacons has changed.
+     * Called when the runtime permission result for a beacon-related
+     * request has been delivered.
      */
     private fun updateBeaconPermission(isGranted: Boolean) {
         parentActivity?.let {
@@ -1285,14 +1373,17 @@ class PmWebView @JvmOverloads constructor(
                 args["status"] = PmAuthorizationStatus.DENIED.rawValue
             }
 
-            // Return an error for the request ID that was pending permission
+            // Reply to the in-flight beacon.authorize request, if any.
+            // Historically this incorrectly fired with LOCATION_AUTHORIZE,
+            // which left the web side waiting forever for a beacon reply.
             beaconAuthorizeRequestId?.let {
-                commandCallback(PMCommand.LOCATION_AUTHORIZE, it, args)
+                commandCallback(PMCommand.BEACON_AUTHORIZE, it, args)
             }
             beaconAuthorizeRequestId = null
 
             if (!isGranted) {
-                // Since permission was denied, return an error for beacon-waiting request IDs
+                // Permission denied → fail any pending beacon reads so the
+                // web side can move on.
                 args["hasError"] = true
 
                 for (item in beaconOnceRequestIds) {
@@ -1308,7 +1399,8 @@ class PmWebView @JvmOverloads constructor(
     }
 
     /**
-     * Sends information about detected beacons to the web.
+     * Sends information about detected beacons to the web. Must be invoked
+     * on the main looper.
      */
     private fun updateBeacon(beacon: PmBeaconDto?, hasError: Boolean) {
         if (hasError) {
@@ -1340,8 +1432,6 @@ class PmWebView @JvmOverloads constructor(
                     flushBeaconBuffer()
                 } else if (!isBeaconBufferFlushReserved) {
                     reserveFlushBeaconBuffer()
-                } else {
-                    // Log.d(TAG_BEACON, " - beacon data is buffered(${beaconBuffer.size})")
                 }
             } else {
                 flushBeaconBuffer()
@@ -1354,7 +1444,7 @@ class PmWebView @JvmOverloads constructor(
             return
         }
         isBeaconBufferFlushReserved = true
-        Handler(Looper.getMainLooper()).postDelayed(
+        mainHandler.postDelayed(
             {
                 flushBeaconBuffer()
                 isBeaconBufferFlushReserved = false
@@ -1380,8 +1470,6 @@ class PmWebView @JvmOverloads constructor(
             beaconBuffer.clear()
 
             args["beacons"] = beacons
-
-            // Log.d(TAG_BEACON, "sending ${beacons.size} beacons at once")
 
             beaconCommandCallback(args)
         }
@@ -1450,11 +1538,10 @@ class PmWebView @JvmOverloads constructor(
                             val azimuthInDegrees =
                                 Math.toDegrees(azimuthInRadians.toDouble()).toFloat()
 
-                            // Device heading (relative to true north)
                             val magneticHeading: Int = Math.round((azimuthInDegrees + 360) % 360)
                             lastMagneticHeading = magneticHeading
 
-                            // Notify at regular intervals
+                            // Throttle updates to one per `magneticHeadingPushInterval`.
                             val now = Date()
                             if (now.time - lastMagneticHeadingNotifiedAt.time > magneticHeadingPushInterval) {
                                 onUpdateHeading(magneticHeading)
@@ -1467,7 +1554,6 @@ class PmWebView @JvmOverloads constructor(
                 override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
             }
 
-            // Register sensor listeners
             val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
             sensorManager.registerListener(
                 sensorHeadingListener,
@@ -1487,7 +1573,8 @@ class PmWebView @JvmOverloads constructor(
     }
 
     /**
-     * Stops requesting heading updates.
+     * Stops requesting heading updates and unregisters the underlying
+     * sensor listener.
      */
     private fun stopSensorHeadingRequest() {
         parentActivity?.let {
@@ -1508,7 +1595,7 @@ class PmWebView @JvmOverloads constructor(
     }
 
     /**
-     * Pauses heading update requests.
+     * Pauses heading update requests for backgrounding.
      */
     private fun pauseSensorHeadingRequestIfNeeded() {
         Log.d(TAG_HEADING, "pausing heading sensor")
@@ -1516,10 +1603,11 @@ class PmWebView @JvmOverloads constructor(
     }
 
     /**
-     * Resumes heading update requests.
+     * Resumes heading update requests when foregrounded — but only when
+     * a watcher is still subscribed.
      */
     private fun resumeSensorHeadingRequestIfNeeded() {
-        headingWatcherExists().let {
+        if (headingWatcherExists()) {
             Log.d(TAG_HEADING, "resuming heading sensor")
             startSensorHeadingRequest()
         }
@@ -1527,6 +1615,14 @@ class PmWebView @JvmOverloads constructor(
 
     private fun headingWatcherExists(): Boolean {
         return headingRequestIds.isNotEmpty()
+    }
+
+    /**
+     * Releases heading-related resources. Mirrors `destroyBeacon`.
+     */
+    private fun destroyHeading() {
+        headingRequestIds.clear()
+        stopSensorHeadingRequest()
     }
 
     /**
@@ -1561,10 +1657,8 @@ class PmWebView @JvmOverloads constructor(
         when (requestCode) {
             PERMISSION_REQUEST_CODE -> {
                 if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
-                    // If granted
                     activePermissionRequest?.grant(activePermissionRequest?.resources)
                 } else {
-                    // If denied
                     activePermissionRequest?.deny()
                 }
                 activePermissionRequest = null
@@ -1572,10 +1666,8 @@ class PmWebView @JvmOverloads constructor(
 
             GEOLOCATION_PERMISSION_REQUEST_CODE -> {
                 if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    // If granted
                     geolocationPermissionsCallback?.invoke(geolocationOrigin, true, false)
                 } else {
-                    // If denied
                     geolocationPermissionsCallback?.invoke(geolocationOrigin, false, false)
                 }
                 geolocationPermissionsCallback = null
@@ -1612,7 +1704,7 @@ class PmWebView @JvmOverloads constructor(
                     if (dataString != null) {
                         results = arrayOf(dataString.toUri())
                     } else {
-                        // In case of multiple file selection
+                        // Multi-select path.
                         results = data.clipData?.let {
                             (0 until it.itemCount).map { i -> it.getItemAt(i).uri }.toTypedArray()
                         }
@@ -1675,6 +1767,7 @@ class PmWebView @JvmOverloads constructor(
      */
     fun activityDestroy() {
         destroyBeacon()
+        destroyHeading()
         loadUrl("about:blank")
         clearHistory()
         removeAllViews()

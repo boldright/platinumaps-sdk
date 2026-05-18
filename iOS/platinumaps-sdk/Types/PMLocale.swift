@@ -1,36 +1,38 @@
 import Foundation
 
+/// Languages supported by the Platinumaps web app. The raw value matches the
+/// `culture` query parameter the web app expects.
 enum PMLocale: String, Sendable {
-    /// 日本語
+    /// Japanese.
     case ja = "ja"
-    
-    /// 英語
+
+    /// English.
     case en = "en"
-    
-    /// 中国語（簡体字）
+
+    /// Simplified Chinese.
     case zhHans = "zh-cn"
-    
-    /// 中国語（繁体字）
+
+    /// Traditional Chinese.
     case zhHant = "zh-tw"
-    
-    /// 韓国語
+
+    /// Korean.
     case ko = "ko"
-    
-    /// フランス語
+
+    /// French.
     case fr = "fr"
-    
-    /// スペイン語
+
+    /// Spanish.
     case es = "es"
-    
-    /// ベトナム語
+
+    /// Vietnamese.
     case vi = "vi"
-    
-    /// インドネシア語
+
+    /// Indonesian.
     case id = "id"
-    
-    /// ミャンマー語
+
+    /// Burmese.
     case my = "my"
-    
-    /// タイ語
+
+    /// Thai.
     case th = "th"
 }
