@@ -2,6 +2,7 @@ import UIKit
 import WebKit
 import SafariServices
 import CoreLocation
+import os
 
 /// Delegate that the host application may set on `PMMainViewController` to take
 /// over the handling of links that the embedded Platinumaps web app wants to
@@ -1489,6 +1490,15 @@ extension PMMainViewController {
     /// origin load for a single client.
     private static let maxRetryDelaySeconds: Double = 8
 
+    /// Unified logger for the initial-load retry path. Routed through
+    /// `os.Logger` so messages can be filtered by subsystem and category
+    /// in Console.app and `log show`, and so debug-level entries are
+    /// elided from release builds without an explicit `#if DEBUG` guard.
+    private static let retryLog = Logger(
+        subsystem: "jp.co.boldright.platinumaps.sdk",
+        category: "retry"
+    )
+
     /// Schedules the next retry of the initial map URL using exponential
     /// backoff. Any retry already in flight is cancelled and replaced.
     /// The attempt counter is advanced so successive failures wait longer
@@ -1500,6 +1510,7 @@ extension PMMainViewController {
         let attempt = retryAttempt
         retryAttempt = attempt + 1
         let delay = min(pow(2.0, Double(attempt)), Self.maxRetryDelaySeconds)
+        Self.retryLog.debug("scheduleNextRetry: attempt=\(attempt) delay=\(delay)s")
         scheduleRetry(after: delay)
     }
 
@@ -1508,6 +1519,7 @@ extension PMMainViewController {
     /// user backgrounded the app, we want them to see one immediate fresh
     /// attempt before any wait kicks in.
     fileprivate func scheduleImmediateRetry() {
+        Self.retryLog.debug("scheduleImmediateRetry")
         scheduleRetry(after: 0)
     }
 
@@ -1520,6 +1532,7 @@ extension PMMainViewController {
             guard let self, !Task.isCancelled, !self.hasWebReady else {
                 return
             }
+            Self.retryLog.debug("firing retry: reloading initial URL")
             self.loadInitialURLForRetry()
         }
     }
@@ -1528,6 +1541,9 @@ extension PMMainViewController {
     /// a subsequent `scheduleNextRetry()` resumes the backoff where it
     /// left off.
     fileprivate func cancelPendingRetry() {
+        if retryTask != nil {
+            Self.retryLog.debug("cancelPendingRetry")
+        }
         retryTask?.cancel()
         retryTask = nil
     }
@@ -1546,6 +1562,9 @@ extension PMMainViewController {
     /// `resetRetryState()` so the background path can wipe pending work
     /// without telling foreground recovery that the load has succeeded.
     fileprivate func clearInitialLoadFailureLatch() {
+        if hasInitialLoadFailed {
+            Self.retryLog.debug("clearInitialLoadFailureLatch: initial load now considered successful")
+        }
         hasInitialLoadFailed = false
     }
 

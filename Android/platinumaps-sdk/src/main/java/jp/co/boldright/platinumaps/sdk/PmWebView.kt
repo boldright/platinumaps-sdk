@@ -129,6 +129,7 @@ class PmWebView @JvmOverloads constructor(
     private val TAG = "platinumap.webview"
     private val TAG_BEACON = "platinumaps.beacon"
     private val TAG_HEADING = "platinumaps.heading"
+    private val TAG_RETRY = "platinumaps.retry"
 
     private var originalUrl: Uri? = null
 
@@ -651,7 +652,9 @@ class PmWebView @JvmOverloads constructor(
         hasInitialLoadFailed = true
         val attempt = retryAttempt
         retryAttempt = attempt + 1
-        scheduleRetry(computeRetryDelayMillis(attempt))
+        val delayMillis = computeRetryDelayMillis(attempt)
+        logRetry { "scheduleNextRetry: attempt=$attempt delay=${delayMillis}ms" }
+        scheduleRetry(delayMillis)
     }
 
     /**
@@ -660,6 +663,7 @@ class PmWebView @JvmOverloads constructor(
      * attempt before any backoff kicks in.
      */
     private fun scheduleImmediateRetry() {
+        logRetry { "scheduleImmediateRetry" }
         scheduleRetry(0L)
     }
 
@@ -668,6 +672,7 @@ class PmWebView @JvmOverloads constructor(
         val runnable = Runnable {
             pendingRetryRunnable = null
             if (!hasWebReady) {
+                logRetry { "firing retry: reloading initial URL" }
                 loadWebView()
             }
         }
@@ -685,7 +690,10 @@ class PmWebView @JvmOverloads constructor(
      * off.
      */
     private fun cancelPendingRetry() {
-        pendingRetryRunnable?.let { mainHandler.removeCallbacks(it) }
+        pendingRetryRunnable?.let {
+            logRetry { "cancelPendingRetry" }
+            mainHandler.removeCallbacks(it)
+        }
         pendingRetryRunnable = null
     }
 
@@ -706,7 +714,21 @@ class PmWebView @JvmOverloads constructor(
      * without telling foreground recovery that the load has succeeded.
      */
     private fun clearInitialLoadFailureLatch() {
+        if (hasInitialLoadFailed) {
+            logRetry { "clearInitialLoadFailureLatch: initial load now considered successful" }
+        }
         hasInitialLoadFailed = false
+    }
+
+    /**
+     * Emits a debug log only on debuggable builds, so retry diagnostics
+     * never reach end-user `logcat` output. The message is built lazily
+     * via the lambda so the string is not allocated in release builds.
+     */
+    private inline fun logRetry(messageBuilder: () -> String) {
+        if (BuildConfig.DEBUG) {
+            Log.d(TAG_RETRY, messageBuilder())
+        }
     }
 
     /**
