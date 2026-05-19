@@ -129,6 +129,23 @@ class PMMainViewController: UIViewController {
     /// `true` once the web layer has signalled `web.ready` at least once.
     private var hasWebReady = false
 
+    /// Number of failed initial-load attempts since the last `web.ready`,
+    /// `web.willreload`, or background reset. Drives the exponential
+    /// backoff in `scheduleNextRetry()`.
+    private var retryAttempt: Int = 0
+
+    /// `true` once the initial load has failed at least once and not yet
+    /// succeeded. Survives the background-reset path so foreground re-entry
+    /// can tell "user is staring at a stuck splash" apart from "load is
+    /// still in flight" and fire an immediate retry only in the former case.
+    /// Cleared on `web.ready` and `web.willreload`.
+    private var hasInitialLoadFailed: Bool = false
+
+    /// Handle to the currently-pending retry, if any. Cancelled when the
+    /// retry needs to be replaced, when the user backgrounds the app, or
+    /// when the controller is torn down.
+    private var retryTask: Task<Void, Never>? = nil
+
     private var _locationManager: CLLocationManager? = nil
     private var locationManager: CLLocationManager {
         if _locationManager == nil {
@@ -296,6 +313,7 @@ class PMMainViewController: UIViewController {
         // so callbacks cannot fire into a deallocated controller. We touch
         // `_locationManager` directly to avoid lazily creating one in deinit.
         NotificationCenter.default.removeObserver(self)
+        retryTask?.cancel()
         if let manager = _locationManager {
             manager.stopUpdatingLocation()
             manager.stopUpdatingHeading()
@@ -389,6 +407,16 @@ class PMMainViewController: UIViewController {
         if useBeacon {
             beaconWillEnterForeground()
         }
+
+        // If the initial load had already failed at least once when the
+        // user backgrounded the app, fire one immediate fresh attempt on
+        // resume rather than leaving the splash up indefinitely. The
+        // pending backoff was cancelled and the counter zeroed on
+        // background entry, so a subsequent failure restarts the
+        // sequence from one second.
+        if !hasWebReady && hasInitialLoadFailed {
+            scheduleImmediateRetry()
+        }
     }
 
     @objc private func didEnterBackgroundNotification(_ notification: Notification) {
@@ -397,6 +425,12 @@ class PMMainViewController: UIViewController {
         if useBeacon {
             beaconDidEnterBackground()
         }
+
+        // iOS suspends the process shortly after backgrounding, so any
+        // pending `Task.sleep` would fire at an unpredictable wall-clock
+        // moment on resume. Cancel the pending retry and reset the
+        // backoff so foreground re-entry can start clean.
+        resetRetryState()
     }
 
     override func present(_ viewControllerToPresent: UIViewController, animated flag: Bool, completion: (() -> Void)? = nil) {
@@ -450,11 +484,34 @@ extension PMMainViewController: WKUIDelegate {
 // MARK: - WKNavigationDelegate
 extension PMMainViewController: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        // Provisional navigation failures (DNS, TLS, offline, etc.) are
-        // surfaced to the web layer by the page's own retry UI, so the SDK
-        // intentionally does not present its own error dialog here. We only
-        // reset the loading flag so subsequent reloads are unblocked.
+        // Provisional navigation failures (DNS, TLS, offline, timeout, …)
+        // happen *before* the WebView has any document to display. While
+        // the web layer has not yet signalled `web.ready` there is no
+        // in-page UI to offer the user a retry, so the SDK drives one
+        // itself with exponential backoff. Once the web layer is alive it
+        // owns navigation, and any subsequent failures are its concern.
         isWebViewLoading = false
+        if !hasWebReady {
+            scheduleNextRetry()
+        }
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void) {
+        // Treat HTTP 4xx / 5xx on the initial main-frame load as a
+        // recoverable failure. Without this the WebView would happily
+        // render the origin's error page and stay there forever (the
+        // server returned a body, so `didFailProvisionalNavigation` does
+        // not fire). After `web.ready` has fired we leave HTTP errors to
+        // the web layer, which can present a richer in-page response.
+        if !hasWebReady,
+           navigationResponse.isForMainFrame,
+           let httpResponse = navigationResponse.response as? HTTPURLResponse,
+           (400...599).contains(httpResponse.statusCode) {
+            decisionHandler(.cancel)
+            scheduleNextRetry()
+            return
+        }
+        decisionHandler(.allow)
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
@@ -540,6 +597,10 @@ extension PMMainViewController {
         case .webReady:
             isWebViewLoading = false
             hasWebReady = true
+            // Successful initial load — drop any retry state that may have
+            // accumulated from earlier failed attempts.
+            resetRetryState()
+            clearInitialLoadFailureLatch()
             var args: [String: Any] = [:]
             hideCoverImageView { [weak self] in
                 if let url = self?.launchURL {
@@ -551,6 +612,11 @@ extension PMMainViewController {
             return
         case .webWillReload:
             hasWebReady = false
+            // The web layer is dropping its document and re-loading. Treat
+            // this like a fresh initial load: clear any retry state so the
+            // backoff starts at zero if the upcoming load fails.
+            resetRetryState()
+            clearInitialLoadFailureLatch()
             showCoverImageView { [weak self] in
                 self?.commandCallback(command, requestId: requestId, args: [:])
             }
@@ -1397,5 +1463,104 @@ extension PMMainViewController {
 #if DEBUG
         print("[Beacon] \(text)")
 #endif
+    }
+}
+
+// MARK: - Initial-Load Retry
+//
+// The SDK retries the initial map URL when it fails to load, because there
+// is no web-side retry UI for the document that hosts it: a transient DNS
+// hiccup, a 5xx from the origin, or the user briefly losing connectivity
+// would otherwise leave the splash screen on indefinitely. The retry loop
+// is intentionally narrow:
+//
+//   * Only the *initial* load is monitored. Once `web.ready` fires the web
+//     layer owns the navigation and the SDK steps out of the way.
+//   * Retries continue forever while the controller is foregrounded. The
+//     backoff caps at `maxRetryDelaySeconds`, so the load is reattempted
+//     at most every few seconds.
+//   * Entering the background cancels any pending retry and resets the
+//     backoff so foreground re-entry feels like a fresh start.
+extension PMMainViewController {
+    /// Upper bound (in seconds) on the wait between retries. The backoff
+    /// is `min(2^attempt, maxRetryDelaySeconds)`, so the sequence is
+    /// `1, 2, 4, 8, 8, 8, …`. A user staring at the splash is unlikely to
+    /// tolerate longer waits, and longer waits do not meaningfully reduce
+    /// origin load for a single client.
+    private static let maxRetryDelaySeconds: Double = 8
+
+    /// Schedules the next retry of the initial map URL using exponential
+    /// backoff. Any retry already in flight is cancelled and replaced.
+    /// The attempt counter is advanced so successive failures wait longer
+    /// up to `maxRetryDelaySeconds`. Also latches `hasInitialLoadFailed`,
+    /// which the foreground-recovery path consults after the counter has
+    /// been zeroed by `resetRetryState()`.
+    fileprivate func scheduleNextRetry() {
+        hasInitialLoadFailed = true
+        let attempt = retryAttempt
+        retryAttempt = attempt + 1
+        let delay = min(pow(2.0, Double(attempt)), Self.maxRetryDelaySeconds)
+        scheduleRetry(after: delay)
+    }
+
+    /// Schedules an immediate retry without advancing the backoff counter.
+    /// Used on foreground re-entry: if the load was still failing when the
+    /// user backgrounded the app, we want them to see one immediate fresh
+    /// attempt before any wait kicks in.
+    fileprivate func scheduleImmediateRetry() {
+        scheduleRetry(after: 0)
+    }
+
+    private func scheduleRetry(after delaySeconds: Double) {
+        retryTask?.cancel()
+        retryTask = Task { @MainActor [weak self] in
+            if delaySeconds > 0 {
+                try? await Task.sleep(for: .seconds(delaySeconds))
+            }
+            guard let self, !Task.isCancelled, !self.hasWebReady else {
+                return
+            }
+            self.loadInitialURLForRetry()
+        }
+    }
+
+    /// Cancels any pending retry without touching the attempt counter, so
+    /// a subsequent `scheduleNextRetry()` resumes the backoff where it
+    /// left off.
+    fileprivate func cancelPendingRetry() {
+        retryTask?.cancel()
+        retryTask = nil
+    }
+
+    /// Cancels any pending retry and resets the attempt counter. The
+    /// `hasInitialLoadFailed` latch is only cleared by the success paths
+    /// (`web.ready`, `web.willreload`); see `clearInitialLoadFailureLatch()`.
+    /// Called on `web.ready`, on `web.willreload`, and when the app
+    /// enters the background.
+    fileprivate func resetRetryState() {
+        cancelPendingRetry()
+        retryAttempt = 0
+    }
+
+    /// Clears the `hasInitialLoadFailed` latch. Separated from
+    /// `resetRetryState()` so the background path can wipe pending work
+    /// without telling foreground recovery that the load has succeeded.
+    fileprivate func clearInitialLoadFailureLatch() {
+        hasInitialLoadFailed = false
+    }
+
+    /// Re-issues the initial map URL. Not to be confused with
+    /// `reloadWebView(_:)`, which is a navigation-stack reset used while
+    /// the page is already live; this method is for the case where the
+    /// initial load itself never completed.
+    private func loadInitialURLForRetry() {
+        guard let url = originalUrl.url else {
+            return
+        }
+        // Keep the splash visible so the user never glimpses an empty
+        // WKWebView between attempts.
+        showCoverImageView()
+        isWebViewLoading = true
+        mainWebView.load(URLRequest(url: url))
     }
 }

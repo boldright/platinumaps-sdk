@@ -142,6 +142,24 @@ class PmWebView @JvmOverloads constructor(
     // True once the web layer has signalled `web.ready` at least once.
     private var hasWebReady = false
 
+    /** Number of failed initial-load attempts since the last `web.ready`,
+     * `web.willreload`, or background reset. Drives the exponential
+     * backoff in [scheduleNextRetry]. */
+    private var retryAttempt: Int = 0
+
+    /** True once the initial load has failed at least once and not yet
+     * succeeded. Survives the background-reset path so [activityResume]
+     * can tell "user is staring at a stuck splash" apart from "load is
+     * still in flight" and fire an immediate retry only in the former
+     * case. Cleared on `web.ready` and `web.willreload`. */
+    private var hasInitialLoadFailed: Boolean = false
+
+    /** Pending retry callback, or null if no retry is currently
+     * scheduled. Held so we can cancel it via
+     * [Handler.removeCallbacks] when the load succeeds, the host
+     * activity pauses, or the view is destroyed. */
+    private var pendingRetryRunnable: Runnable? = null
+
     private var isMeasuringLocation = false
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private var lastLocation: Location? = null
@@ -278,6 +296,7 @@ class PmWebView @JvmOverloads constructor(
             ) {
                 super.onReceivedError(view, request, error)
                 onError(request, error?.description?.toString())
+                scheduleRetryIfInitialLoadFailed(request)
             }
 
             override fun onReceivedHttpError(
@@ -287,6 +306,7 @@ class PmWebView @JvmOverloads constructor(
             ) {
                 super.onReceivedHttpError(view, request, errorResponse)
                 onError(request, errorResponse?.reasonPhrase)
+                scheduleRetryIfInitialLoadFailed(request)
             }
 
             private fun onError(request: WebResourceRequest?, message: String?) {
@@ -295,6 +315,21 @@ class PmWebView @JvmOverloads constructor(
                     Log.e(TAG, "error: url=${request.url} message=$message")
                 } else {
                     Log.e(TAG, "error: message=$message")
+                }
+            }
+
+            /**
+             * Triggers the initial-load retry loop, but only for the
+             * main frame and only before the web layer has signalled
+             * `web.ready`. Subresource errors and post-ready navigation
+             * failures are surfaced to the web layer, which decides
+             * what to do with them.
+             */
+            private fun scheduleRetryIfInitialLoadFailed(
+                request: WebResourceRequest?
+            ) {
+                if (request?.isForMainFrame == true && !hasWebReady) {
+                    scheduleNextRetry()
                 }
             }
 
@@ -581,6 +616,116 @@ class PmWebView @JvmOverloads constructor(
 
     //endregion
 
+    //region Initial Load Retry
+    //
+    // The SDK retries the initial map URL when it fails to load, because
+    // there is no web-side retry UI for the document that hosts it: a
+    // transient DNS hiccup, a 5xx from the origin, or the user briefly
+    // losing connectivity would otherwise leave the splash screen on
+    // indefinitely. The retry loop is intentionally narrow:
+    //
+    //   * Only the *initial* load is monitored. Once `web.ready` fires
+    //     the web layer owns navigation and the SDK steps out of the way.
+    //   * Retries continue forever while the host activity is in the
+    //     foreground. The backoff caps at [maxRetryDelaySeconds], so the
+    //     load is reattempted at most every few seconds.
+    //   * `activityPause()` cancels any pending retry and resets the
+    //     backoff so `activityResume()` feels like a fresh start.
+
+    /** Cap on the wait between initial-load retries, in seconds. The
+     * backoff is `min(2^attempt, maxRetryDelaySeconds)`, yielding the
+     * sequence `1, 2, 4, 8, 8, 8, …`. A user staring at the splash will
+     * not tolerate longer waits, and longer waits do not meaningfully
+     * reduce origin load for a single client. */
+    private val maxRetryDelaySeconds: Long = 8L
+
+    /**
+     * Schedules the next retry of the initial map URL with exponential
+     * backoff. Any retry already in flight is replaced. The attempt
+     * counter is advanced so successive failures wait longer up to
+     * [maxRetryDelaySeconds]. Also latches [hasInitialLoadFailed],
+     * which the foreground-recovery path consults after the counter has
+     * been zeroed by [resetRetryState].
+     */
+    private fun scheduleNextRetry() {
+        hasInitialLoadFailed = true
+        val attempt = retryAttempt
+        retryAttempt = attempt + 1
+        scheduleRetry(computeRetryDelayMillis(attempt))
+    }
+
+    /**
+     * Schedules an immediate retry without advancing the backoff
+     * counter. Used on `activityResume()` so the user sees one fresh
+     * attempt before any backoff kicks in.
+     */
+    private fun scheduleImmediateRetry() {
+        scheduleRetry(0L)
+    }
+
+    private fun scheduleRetry(delayMillis: Long) {
+        cancelPendingRetry()
+        val runnable = Runnable {
+            pendingRetryRunnable = null
+            if (!hasWebReady) {
+                loadWebView()
+            }
+        }
+        pendingRetryRunnable = runnable
+        if (delayMillis <= 0L) {
+            mainHandler.post(runnable)
+        } else {
+            mainHandler.postDelayed(runnable, delayMillis)
+        }
+    }
+
+    /**
+     * Cancels any pending retry without touching the attempt counter, so
+     * a subsequent [scheduleNextRetry] resumes the backoff where it left
+     * off.
+     */
+    private fun cancelPendingRetry() {
+        pendingRetryRunnable?.let { mainHandler.removeCallbacks(it) }
+        pendingRetryRunnable = null
+    }
+
+    /**
+     * Cancels any pending retry and resets the attempt counter. The
+     * [hasInitialLoadFailed] latch is only cleared by the success paths
+     * (`web.ready`, `web.willreload`); see [clearInitialLoadFailureLatch].
+     * Called on `web.ready`, on `web.willreload`, and on [activityPause].
+     */
+    private fun resetRetryState() {
+        cancelPendingRetry()
+        retryAttempt = 0
+    }
+
+    /**
+     * Clears the [hasInitialLoadFailed] latch. Separated from
+     * [resetRetryState] so the background path can wipe pending work
+     * without telling foreground recovery that the load has succeeded.
+     */
+    private fun clearInitialLoadFailureLatch() {
+        hasInitialLoadFailed = false
+    }
+
+    /**
+     * Returns the backoff delay for the given attempt index in
+     * milliseconds. The cap is reached at attempt 3, so the result is
+     * constant beyond that and we need not worry about left-shift
+     * overflow for large attempt values.
+     */
+    private fun computeRetryDelayMillis(attempt: Int): Long {
+        val seconds = if (attempt >= 30) {
+            maxRetryDelaySeconds
+        } else {
+            (1L shl attempt).coerceAtMost(maxRetryDelaySeconds)
+        }
+        return seconds * 1000L
+    }
+
+    //endregion
+
     //region Command
 
     // Decide what to do with a URI the WebView is trying to navigate to.
@@ -639,6 +784,10 @@ class PmWebView @JvmOverloads constructor(
 
             PMCommand.WEB_READY -> {
                 hasWebReady = true
+                // Successful initial load — drop any retry state that
+                // may have accumulated from earlier failed attempts.
+                resetRetryState()
+                clearInitialLoadFailureLatch()
                 val args = mutableMapOf<String, String>()
                 appLinkUri?.let {
                     args["launchUrl"] = it.toString()
@@ -650,6 +799,12 @@ class PmWebView @JvmOverloads constructor(
 
             PMCommand.WEB_WILL_RELOAD -> {
                 hasWebReady = false
+                // The web layer is dropping its document and re-loading.
+                // Treat this like a fresh initial load: clear any retry
+                // state so the backoff starts at zero if the upcoming
+                // load fails.
+                resetRetryState()
+                clearInitialLoadFailureLatch()
                 commandCallback(command, requestId, mapOf())
                 return 0u
             }
@@ -1741,6 +1896,13 @@ class PmWebView @JvmOverloads constructor(
         }
         pauseScanningBeaconIfNeeded()
         pauseSensorHeadingRequestIfNeeded()
+
+        // Android may suspend or kill the process shortly after pause, so
+        // any pending `postDelayed` callback would fire at an
+        // unpredictable wall-clock moment on resume. Cancel the pending
+        // retry and reset the backoff so [activityResume] can start
+        // clean.
+        resetRetryState()
     }
 
     /**
@@ -1756,6 +1918,16 @@ class PmWebView @JvmOverloads constructor(
         }
         resumeScanningBeaconIfNeeded()
         resumeSensorHeadingRequestIfNeeded()
+
+        // If the initial load had already failed at least once when the
+        // user backgrounded the app, fire one immediate fresh attempt on
+        // resume rather than leaving the splash up indefinitely. The
+        // pending backoff was cancelled and the counter zeroed on
+        // [activityPause], so a subsequent failure restarts the
+        // sequence from one second.
+        if (!hasWebReady && hasInitialLoadFailed) {
+            scheduleImmediateRetry()
+        }
     }
 
     /**
@@ -1766,6 +1938,7 @@ class PmWebView @JvmOverloads constructor(
      * WebView's history and state, and calls the underlying `destroy()` method.
      */
     fun activityDestroy() {
+        cancelPendingRetry()
         destroyBeacon()
         destroyHeading()
         loadUrl("about:blank")
