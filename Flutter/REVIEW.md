@@ -92,7 +92,7 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
 - ✅ **#41** example pubspec の Dart SDK constraint (`^3.12.0`) と plugin (`^3.4.0`) が乖離 — `Flutter/example/pubspec.yaml:22`
   - example を plugin の floor (`^3.4.0`) に合わせる。
 - ✅ **#42** flutter_lints バージョン乖離 (plugin `^4.0.0`, example `^6.0.0`) — `Flutter/platinumaps_flutter_sdk/pubspec.yaml:19`
-  - plugin を `^6.0.0` に揃え。
+  - 当初 plugin を `^6.0.0` に揃えたが、`flutter_lints 6.0.0` は Dart 3.8+ を要求するため plugin の `environment.sdk: ^3.4.0` と矛盾し CI の `pub get` が exit 66 で fail。Flutter 3.22 サポート維持のため両方を `^4.0.0` に揃え直し。SDK floor を Dart 3.8+ (Flutter 3.32+) に上げる方が将来的には正しいが、README が宣言する Flutter 3.22 サポートと整合させる方を優先。
 - ✅ **#43** CHANGELOG: `[0.1.0]` リンク先タグが未公開、`[0.1.0] - Unreleased` 書式も不慣例 — `Flutter/platinumaps_flutter_sdk/CHANGELOG.md:66`
   - `[Unreleased]` 見出しに変更し、まだ存在しない release tag リンクを削除。release 時に `[0.1.0] - YYYY-MM-DD` + リンクを追加する形へ。
 - ✅ **#44** CHANGELOG: 「ten cases」と数字を直書きしているのが脆い — `Flutter/platinumaps_flutter_sdk/CHANGELOG.md:59`
