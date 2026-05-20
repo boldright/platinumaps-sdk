@@ -133,13 +133,15 @@ the map.
 | `userId` | Opaque user identifier exposed to the web layer | ✓ | — |
 | `secretKey` | Opaque shared secret exposed to the web layer | ✓ | — |
 | `offsetBottom` | Reports a zeroed bottom safe-area inset to the web | ✓ | — |
-| `coverImage` | Splash image shown until `web.ready` | ✓ | — |
+| `coverImage` | Splash image shown until `web.ready` | — | — |
 | `beacon` | iBeacon ranging configuration | ✓ | ✓ |
 | `launchUrl` | Deep link forwarded to the web layer at first load | ✓ | — |
 
 Fields marked `—` are accepted by the Dart API for forward
-compatibility but currently ignored on that platform. See
-`DESIGN.md` §8 for the cross-platform parity backlog.
+compatibility but currently ignored on that platform. `coverImage`
+is dropped on both platforms in v0.1; render a Flutter splash widget
+above the map in a `Stack` until the parity work in `DESIGN.md`
+§8 #5 lands. The cross-platform parity backlog tracks the rest.
 
 ## Sample app
 

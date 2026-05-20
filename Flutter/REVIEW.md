@@ -16,8 +16,8 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
   - Dart `_creationParams()` で `hasOpenLinkHandler: widget.onOpenLink != null` を送信。iOS / Android plugin はそのフラグが true のときだけ `mv.delegate = self` / `webView.onOpenLinkListener = this` を立てる。null 時は SDK 既定のフォールバック（iOS: SFSafariViewController, Android: CustomTabs）が機能する。
 - ✅ **#5** iOS: PMLocalizedStrings の言語解決が `Bundle.main.preferredLocalizations` に依存。Flutter host の Info.plist に `CFBundleLocalizations` 未宣言だと日本語デバイスでも英語に flat — `iOS/platinumaps-sdk/Types/PMLocalizedStrings.swift:11`
   - `Locale.preferredLanguages.first` を一次取得元に変更。host bundle の `CFBundleLocalizations` 宣言の有無に依存せずデバイス言語に従う。`scripts/generate-strings.py` 側も同じ Swift コードを emit するよう更新。
-- ⬜ **#6** coverImage の Dart doc / README は「iOS で表示される」と書くが実装は両プラットフォーム未配線 — `Flutter/platinumaps_flutter_sdk/lib/src/platinumaps_map_view.dart:84`
-  - v0.1 は doc を「未配線、§8 #5 で再評価」へ訂正。`#21` と一括。
+- ✅ **#6** coverImage の Dart doc / README は「iOS で表示される」と書くが実装は両プラットフォーム未配線 — `Flutter/platinumaps_flutter_sdk/lib/src/platinumaps_map_view.dart:84`
+  - v0.1 は両プラットフォーム未配線が事実なので、Dart doc / README / iOS plugin コメントを「accepted for forward compatibility but dropped on both platforms in v0.1」に統一。
 - ⬜ **#7** CLAUDE.md の lifecycle / threading / "Where to make common changes" 記述が PMMapView リファクタを反映していない — `CLAUDE.md:128`
 
 ## Recommended (#8–#50)
@@ -37,7 +37,8 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
 - ⬜ **#18** 複数 PlatinumapsMapView 同時表示で permission/file chooser のルーティング衝突 — `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/jp/co/boldright/platinumaps/flutter/PlatinumapsPlatformViewFactory.kt:38`
 - ⬜ **#19** Android plugin: queryParams の unchecked cast が型不一致でクラッシュリスク — `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/jp/co/boldright/platinumaps/flutter/PlatinumapsPlatformView.kt:62`
 - ⬜ **#20** Android plugin: factory が `activity == null` を fallback context にし、permission request が無音失敗 — `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/jp/co/boldright/platinumaps/flutter/PlatinumapsPlatformViewFactory.kt:24`
-- ⬜ **#21** Flutter README の Configuration テーブルで coverImage を iOS ✓ と記載 (#6 と関連) — `Flutter/platinumaps_flutter_sdk/README.md:115`
+- ✅ **#21** Flutter README の Configuration テーブルで coverImage を iOS ✓ と記載 (#6 と関連) — `Flutter/platinumaps_flutter_sdk/README.md:115`
+  - 両プラットフォームとも `—` に修正し、`Stack` でホスト側 Flutter splash を被せる回避策を説明。
 - ⬜ **#22** Flutter README の "Sample app: (to be added)" が陳腐化 — `Flutter/platinumaps_flutter_sdk/README.md:144`
 - ✅ **#23** Flutter README / dartdoc が「onOpenLink=null でネイティブ既定にフォールバック」と書くが iOS は #4、Android は `browse.app` のみフォールバック — `Flutter/platinumaps_flutter_sdk/lib/src/platinumaps_map_view.dart:102`
   - #4 修正後、iOS は完全にフォールバック動作。Android は `browse.inapp` (non-shared) のみ CustomTabs フォールバック、`browse.app` / `map.navigate` / shared-cookie は silent drop。この差を dartdoc にプラットフォーム別箇条書きで明記。
@@ -51,7 +52,8 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
 - ⬜ **#31** iOS PMMapView deinit が non-main で呼ばれると `MainActor.assumeIsolated` がクラッシュ可能性 — `iOS/platinumaps-sdk/Views/PMMapView.swift:377`
 - ⬜ **#32** iOS Plugin Factory の `MainActor.assumeIsolated` が non-main 呼び出しでトラップ — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformViewFactory.swift:15`
 - ⬜ **#33** iOS PMMapView の公開 var が performFirstAttachSetup 後変更不可だが doc が不明示 — `iOS/platinumaps-sdk/Views/PMMapView.swift:84`
-- ⬜ **#34** iOS plugin の applyCreationArguments の coverImage コメントが「opaque ImageProvider が wire 化されてない」前提だが、Dart 側は実は coverImage を送っていない (#6) — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformView.swift:31`
+- ✅ **#34** iOS plugin の applyCreationArguments の coverImage コメントが「opaque ImageProvider が wire 化されてない」前提だが、Dart 側は実は coverImage を送っていない (#6) — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformView.swift:31`
+  - コメントを「Dart 側がそもそも creationParams に出さない」と正しく書き換え。
 - ⬜ **#35** iOS WebView の `didFinish` で `hasInitialLoadFailed` ラッチがクリアされない (pre-existing) — `iOS/platinumaps-sdk/Views/PMMapView.swift:534`
 - ⬜ **#36** iOS Podspec の `s.license` の相対パスが podspec 位置から1段上を指す。動作はするが慣例的でない — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk.podspec:22`
 - ⬜ **#37** Android plugin AndroidManifest が空。SDK が要求する permission を `<uses-permission>` で宣言しないと manifest merger が機能しない — `Flutter/platinumaps_flutter_sdk/android/src/main/AndroidManifest.xml:1`

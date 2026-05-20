@@ -61,9 +61,13 @@ final class PlatinumapsPlatformView: NSObject, FlutterPlatformView, PMMapViewDel
     /// tests can exercise the field-by-field translation directly,
     /// without standing up a `FlutterMethodChannel`.
     ///
-    /// `coverImage` is intentionally not handled: the Dart side ships
-    /// an opaque `ImageProvider` that has no stable wire
-    /// representation (tracked in `Flutter/DESIGN.md` §8 #5).
+    /// `coverImage` is intentionally not handled. The Dart side
+    /// declines to serialize `ImageProvider` across the platform
+    /// channel — no key is emitted by `_creationParams` — so the
+    /// argument never reaches this method in v0.1. The parameter is
+    /// kept on the Dart public API for forward compatibility;
+    /// `Flutter/DESIGN.md` §8 #5 tracks the parity follow-up that
+    /// will plumb it through.
     @MainActor
     internal static func applyCreationArguments(
         _ args: [String: Any]?,

@@ -81,10 +81,15 @@ class PlatinumapsMapView extends StatefulWidget {
   /// bottom inset (e.g. a tab bar).
   final int offsetBottom;
 
-  /// iOS-only. Splash image shown on top of the WebView until the
-  /// web layer signals `web.ready`. The Android native SDK has no
-  /// equivalent today; passing a value on Android is silently
-  /// ignored.
+  /// Splash image shown on top of the WebView until the web layer
+  /// signals `web.ready`.
+  ///
+  /// **Not yet wired in v0.1.** The parameter is part of the public
+  /// API for forward compatibility, but Dart `ImageProvider` has no
+  /// stable wire representation across the platform channel and v0.1
+  /// drops the value on both platforms. Until the parity follow-up
+  /// in `DESIGN.md` §8 #5 lands, host a Flutter splash widget above
+  /// the map in a `Stack` if you need one.
   final ImageProvider? coverImage;
 
   /// Beacon ranging configuration. Pass `null` to disable beacon
