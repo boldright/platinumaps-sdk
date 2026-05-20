@@ -39,8 +39,16 @@ let package = Package(
         .iOS("16.0"),
     ],
     products: [
+        // Flutter's SwiftPM plugin convention requires plugin names
+        // that contain an underscore (`platinumaps_flutter_sdk`) to
+        // expose a hyphen-separated library product. The
+        // `FlutterGeneratedPluginSwiftPackage` that Flutter generates
+        // at build time references this library by its hyphenated
+        // name, so changing it here breaks the host app's package
+        // resolution (`product 'platinumaps-flutter-sdk' ... not
+        // found in package 'platinumaps_flutter_sdk'`).
         .library(
-            name: "platinumaps_flutter_sdk",
+            name: "platinumaps-flutter-sdk",
             targets: ["platinumaps_flutter_sdk"]
         ),
     ],

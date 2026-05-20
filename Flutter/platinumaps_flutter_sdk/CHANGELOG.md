@@ -3,11 +3,14 @@
 All notable changes to this package are documented in this file. The
 format follows [Keep a Changelog](https://keepachangelog.com).
 
-## [Unreleased]
+## [Unreleased] — towards 0.1.0
 
-Initial pre-release. The package is publishable to pub.dev once the
-remaining roadmap items (DESIGN.md §9 steps 6–8) are complete; the
-API surface is considered unstable until 1.0.0.
+Initial pre-release for 0.1.0. The package is publishable to pub.dev
+once the remaining roadmap items (DESIGN.md §9 steps 6–8) are
+complete; the API surface is considered unstable until 1.0.0. When
+the release tag is cut, rename this heading to `## [0.1.0] -
+YYYY-MM-DD` and add the matching link target at the bottom of the
+file.
 
 ### Added
 

@@ -1,8 +1,9 @@
-gradle-wrapper.jar
+# gradle-wrapper.jar, gradlew, and gradlew.bat are kept in the
+# repository so CI runners can invoke `./gradlew` without first
+# installing a system Gradle (the `flutter create` default ignores
+# them, but Flutter's own templates moved towards committing them).
 /.gradle
 /captures/
-/gradlew
-/gradlew.bat
 /local.properties
 GeneratedPluginRegistrant.java
 .cxx/
