@@ -166,15 +166,20 @@ class _PlatinumapsMapViewState extends State<PlatinumapsMapView> {
     switch (call.method) {
       case 'onOpenLink':
         final callback = widget.onOpenLink;
-        if (callback != null) {
-          final args = (call.arguments as Map).cast<String, Object?>();
-          final urlString = args['url'] as String?;
-          if (urlString == null) return null;
-          final uri = Uri.tryParse(urlString);
-          if (uri == null) return null;
-          final sharedCookie = args['sharedCookie'] as bool? ?? false;
-          callback(uri, sharedCookie: sharedCookie);
-        }
+        if (callback == null) return null;
+        // The platform channel can deliver `null`, a `Map<dynamic,
+        // dynamic>`, or unexpected types from a misbehaving native
+        // side. Tolerate all of them by bailing out cleanly instead
+        // of throwing into the platform channel runtime.
+        final rawArgs = call.arguments;
+        if (rawArgs is! Map) return null;
+        final args = Map<String, Object?>.from(rawArgs);
+        final urlString = args['url'];
+        if (urlString is! String) return null;
+        final uri = Uri.tryParse(urlString);
+        if (uri == null) return null;
+        final sharedCookie = args['sharedCookie'] == true;
+        callback(uri, sharedCookie: sharedCookie);
         return null;
       default:
         return null;

@@ -39,8 +39,10 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
   - クラスに `@MainActor` 追加。
 - ✅ **#15** iOS plugin: deinit で mapView.delegate = nil していない (Android との対称性 / 安全性) — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformView.swift:7`
   - deinit を追加し、`MainActor.assumeIsolated { mapView.delegate = nil }` で delegate を解除（PMMapView 側 deinit と同じパターン）。
-- ⬜ **#16** Dart `_handleMethodCall` で `call.arguments as Map` の防御不足 + raw type — `Flutter/platinumaps_flutter_sdk/lib/src/platinumaps_map_view.dart:148`
-- ⬜ **#17** example の `_handleOpenLink` が `Future<void>` を返しエラーが捨てられる — `Flutter/example/lib/main.dart:32`
+- ✅ **#16** Dart `_handleMethodCall` で `call.arguments as Map` の防御不足 + raw type — `Flutter/platinumaps_flutter_sdk/lib/src/platinumaps_map_view.dart:148`
+  - arguments が non-Map / null / 型不正でも throw せず early return。url は `is! String` チェック、sharedCookie は `== true` 比較で false の sentinel に。
+- ✅ **#17** example の `_handleOpenLink` が `Future<void>` を返しエラーが捨てられる — `Flutter/example/lib/main.dart:32`
+  - `try/catch` で wrap、`debugPrint` で stack ごとログ。
 - ⬜ **#18** 複数 PlatinumapsMapView 同時表示で permission/file chooser のルーティング衝突 — `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/jp/co/boldright/platinumaps/flutter/PlatinumapsPlatformViewFactory.kt:38`
 - ⬜ **#19** Android plugin: queryParams の unchecked cast が型不一致でクラッシュリスク — `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/jp/co/boldright/platinumaps/flutter/PlatinumapsPlatformView.kt:62`
 - ⬜ **#20** Android plugin: factory が `activity == null` を fallback context にし、permission request が無音失敗 — `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/jp/co/boldright/platinumaps/flutter/PlatinumapsPlatformViewFactory.kt:24`

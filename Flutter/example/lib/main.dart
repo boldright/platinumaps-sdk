@@ -31,10 +31,18 @@ class _ExampleHomeState extends State<_ExampleHome> {
 
   Future<void> _handleOpenLink(Uri url, {required bool sharedCookie}) async {
     setState(() => _lastOpenedLink = url.toString());
-    await launcher.launchUrl(
-      url,
-      mode: launcher.LaunchMode.externalApplication,
-    );
+    try {
+      await launcher.launchUrl(
+        url,
+        mode: launcher.LaunchMode.externalApplication,
+      );
+    } catch (error, stack) {
+      // The SDK callback is fire-and-forget, so any exception thrown
+      // by `launcher.launchUrl` would otherwise become an unobserved
+      // Future error and crash the app at the next Dart microtask
+      // pump. Log it and move on.
+      debugPrint('Failed to launch $url: $error\n$stack');
+    }
   }
 
   @override
