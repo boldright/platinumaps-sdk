@@ -560,45 +560,47 @@ introduce breaking changes with a clear CHANGELOG entry.
 1. **`PMMapView` lifecycle granularity.** `didMoveToWindow` fires every
    time the view re-enters a window hierarchy, not only on first
    attach. Confirm that the first-attach latch in the refactor
-   preserves the current `viewDidAppear`-once behaviour.
+   preserves the current `viewDidAppear`-once behaviour. *Verification
+   pending; tracked as a Known fragile spot in `HANDOFF.md`.*
 2. **Beacon configuration timing.** The native SDK accepts beacon
    options at `openPlatinumaps` time and treats them as immutable for
-   the WebView's lifetime. Confirm that the Flutter creation-arguments
-   path matches this contract (i.e., changing
-   `PlatinumapsBeaconOptions` after construction either rebuilds the
-   PlatformView or is documented as a no-op).
+   the WebView's lifetime. *Decision:* the Dart API passes beacon
+   options through `creationParams` only, so changing
+   `PlatinumapsBeaconOptions` after the widget is built has no effect
+   unless the host rebuilds the widget with a fresh `key`. This is
+   documented inline on the `PlatinumapsMapView` class doc.
 3. **CocoaPods vs Swift Package Manager.** Flutter iOS plugins
-   historically ship as podspecs. Confirm whether bundling a podspec
-   that re-exports the existing Swift Package is acceptable, or
-   whether we need a podspec that vendors the sources directly.
+   historically ship as podspecs, but `flutter analyze` now warns
+   that lack of SwiftPM support will become an error. *Decision:*
+   ship both a Swift Package and a podspec, sharing the same sources
+   so the plugin works regardless of which pod manager the host
+   project uses. Implementation tracked as part of roadmap step 5.
 4. **Native SDK packaging for pub.dev.** ✅ *Resolved:* Option 1
    (bundle sources at publish time), see §5 *Distribution*. In-repo
    wiring is now in place; the publish-time copy step is tracked as
    part of step 8.
-5. **Cover image parity.** Decide whether to add Android coverage
-   for `coverImage` in the existing Android SDK, or freeze
+5. **Cover image parity.** *Decision (v0.1):* freeze
    `PlatinumapsMapView.coverImage` as iOS-only in the Dart API and
-   document the asymmetry.
-6. **Naming alignment between iOS and Android.** The native SDKs
-   disagree on field names — iOS `mapSlug` / Android `mapPath`, iOS
-   `mapQuery` / Android `queryParams`. The Dart API picks one of each
-   (`mapSlug`, `queryParams`) and the plugin glue translates. Decide
-   whether to also rename in the native SDKs to converge, or to leave
-   the divergence in place forever.
-7. **`PlatinumapsLocale` wire format.** The enum values map to web-app
-   `culture` strings (`"ja"`, `"zh-cn"`, …). Confirm Kotlin and Swift
-   serialize identically, including the hyphenated forms, when the
-   Dart enum is sent through the platform channel.
-8. **Permission acquisition responsibility.** The existing iOS and
-   Android SDKs trigger system permission prompts themselves
-   (`CLLocationManager`, `ActivityCompat.requestPermissions`).
-   Confirm the Flutter wrapper inherits this behaviour as-is and that
-   the host only needs to declare `NSLocationWhenInUseUsageDescription`
-   / `ACCESS_FINE_LOCATION` etc. in its `Info.plist` /
-   `AndroidManifest.xml`, with no `permission_handler` dependency.
-9. **`isWebViewInspectable` exposure.** The iOS SDK has a public
-   opt-in for the WebKit Inspector. v1 omits it from the Dart API on
-   the assumption that debug-only behaviour (Android already gates on
+   document the asymmetry; do not add Android coverage in v0.1.
+   Re-evaluate post-launch once concrete demand is known.
+6. **Naming alignment between iOS and Android.** *Decision:* leave
+   the native-SDK names as-is (iOS `mapSlug` / Android `mapPath`,
+   iOS `mapQuery` / Android `queryParams`) and translate at the
+   plugin-glue layer. Renaming public surfaces in the native SDKs
+   would break every existing native-iOS / native-Android integrator
+   for marginal Dart-side benefit.
+7. **`PlatinumapsLocale` wire format.** The enum values map to
+   web-app `culture` strings (`"ja"`, `"zh-cn"`, …). *Verification
+   pending; tracked as part of the cross-platform code review.*
+8. **Permission acquisition responsibility.** *Decision:* inherit
+   the native SDKs' behaviour unchanged. The Flutter plugin does no
+   permission work itself; hosts declare the relevant `Info.plist`
+   keys (`NSLocationWhenInUseUsageDescription` etc.) and
+   `AndroidManifest.xml` permissions (`ACCESS_FINE_LOCATION` etc.)
+   exactly as documented in `iOS/README.md` / `Android/README.md`,
+   with no `permission_handler` dependency required.
+9. **`isWebViewInspectable` exposure.** *Decision:* v1 omits it from
+   the Dart API; debug-only behaviour (Android already gates on
    `BuildConfig.DEBUG`) is sufficient. Reopen if customers ask for
    release-build debugging.
 
