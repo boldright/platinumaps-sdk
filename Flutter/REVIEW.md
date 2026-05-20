@@ -18,7 +18,8 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
   - `Locale.preferredLanguages.first` を一次取得元に変更。host bundle の `CFBundleLocalizations` 宣言の有無に依存せずデバイス言語に従う。`scripts/generate-strings.py` 側も同じ Swift コードを emit するよう更新。
 - ✅ **#6** coverImage の Dart doc / README は「iOS で表示される」と書くが実装は両プラットフォーム未配線 — `Flutter/platinumaps_flutter_sdk/lib/src/platinumaps_map_view.dart:84`
   - v0.1 は両プラットフォーム未配線が事実なので、Dart doc / README / iOS plugin コメントを「accepted for forward compatibility but dropped on both platforms in v0.1」に統一。
-- ⬜ **#7** CLAUDE.md の lifecycle / threading / "Where to make common changes" 記述が PMMapView リファクタを反映していない — `CLAUDE.md:128`
+- ✅ **#7** CLAUDE.md の lifecycle / threading / "Where to make common changes" 記述が PMMapView リファクタを反映していない — `CLAUDE.md:128`
+  - iOS lifecycle セクションを PMMapView の `didMoveToWindow` 初回セットアップに書き直し。Threading model の iOS 説明を UIView の `@MainActor` 帰結に置き換え、`MainActor.assumeIsolated` の根拠を明記。Build & test に Flutter サンプル app の場所を追記。"Where to make common changes" のパスを `Views/PMMapView.swift` に更新、Flutter plugin と locale 翻訳の補足行を追加。
 
 ## Recommended (#8–#50)
 

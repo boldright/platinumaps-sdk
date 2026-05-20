@@ -127,11 +127,16 @@ layer trying to escalate via the native app.
 
 ### iOS
 
-`PMMainViewController` registers `UIApplication.willEnterForeground` /
-`didEnterBackground` observers in `viewDidAppear` and tears them down (plus
-the location manager delegate and any active beacon ranging) in `deinit`.
-There is no extra plumbing required from the host — present the controller
-modally or push it onto a navigation controller and the SDK handles the rest.
+The bridge / WebView / sensor logic lives on `PMMapView` (a `UIView`).
+`PMMainViewController` is preserved as a thin forwarding wrapper so
+existing native-iOS integrators that follow `iOS/README.md` keep
+working unchanged — the Flutter plugin and any other UIKit container
+can instead embed `PMMapView` directly. `PMMapView` runs its one-time
+setup on the first `didMoveToWindow`, registers
+`UIApplication.willEnterForeground` / `didEnterBackground` observers
+there, and tears them down (plus the location manager delegate and
+any active beacon ranging) in `deinit`. There is no extra plumbing
+required from the host.
 
 ### Android
 
@@ -163,11 +168,14 @@ down — call it exactly once per WebView instance.
 
 ## Threading model
 
-- **iOS** — `PMMainViewController` is implicitly `@MainActor`. All bridge
-  callbacks (`evaluateJavaScript`, `WKNavigationDelegate`, location and
-  beacon delegates) are dispatched on the main thread by the system. The
-  one explicit `Task.sleep` (the 120 ms heading-catchup) marshalls back to
-  the main actor via `[weak self]` capture.
+- **iOS** — `PMMapView` is a `UIView`, which is implicitly `@MainActor`
+  under UIKit's Swift 6 annotations. All bridge callbacks
+  (`evaluateJavaScript`, `WKNavigationDelegate`, location and beacon
+  delegates) are dispatched on the main thread by the system. The one
+  explicit `Task.sleep` (the 120 ms heading-catchup) marshalls back
+  to the main actor via `[weak self]` capture. `PMMapView.deinit`
+  wraps its sensor cleanup in `MainActor.assumeIsolated { … }`
+  because UIView deallocation reliably runs on the main thread.
 - **Android** — `WebView` and all of the SDK's mutable state must be
   touched only from the main looper. BLE `ScanCallback` arrives on a
   binder thread chosen by the OS, so `PmWebView.leScanCallback` re-posts
@@ -181,13 +189,17 @@ down — call it exactly once per WebView instance.
 - Build the package: `swift build` (from repo root, with `Package.swift`).
 - Build in Xcode: open the package, select the `PlatinumapsSDK` target,
   build.
-- There is no first-party sample app in the repo. To smoke-test, embed
-  `PMMainViewController` in a tiny host app:
+- There is no first-party iOS sample app in the repo. To smoke-test
+  the public API, embed `PMMainViewController` (the documented
+  wrapper) or `PMMapView` (UIView, embedded directly by the Flutter
+  plugin and by SwiftUI hosts) in a tiny host app:
   ```swift
   let vc = PMMainViewController()
   vc.mapSlug = "demo"
   present(UINavigationController(rootViewController: vc), animated: true)
   ```
+- The Flutter SDK at `Flutter/platinumaps_flutter_sdk/` ships its
+  own end-to-end example at `Flutter/example/`.
 
 ### Android
 
@@ -203,10 +215,11 @@ down — call it exactly once per WebView instance.
 
 | Task | iOS | Android |
 |------|-----|---------|
-| Add a new bridge command | `PMCommand` enum + `runCommand` switch in `PMMainViewController.swift` | `PMCommand` enum + `runCommand` switch in `PmWebView.kt` |
-| Add a new query parameter to the map URL | `viewDidAppear` URL-build block in `PMMainViewController.swift` | `openPlatinumaps(options, queryPrams)` builder in `PmWebView.kt` |
-| Tweak the permission allowlist for `browse.*` | `browseAllowedSchemes` in `PMMainViewController.swift` | `browseAllowedSchemes` in `PmWebView.kt` |
-| Add a new locale to the `culture` enum | `Types/PMLocale.swift` | n/a — Android derives `culture` from `Accept-Language` |
+| Add a new bridge command | `PMCommand` enum + `runCommand` switch in `Views/PMMapView.swift` | `PMCommand` enum + `runCommand` switch in `PmWebView.kt` |
+| Add a new query parameter to the map URL | `performFirstAttachSetup` URL-build block in `Views/PMMapView.swift` | `openPlatinumaps(options, queryPrams)` builder in `PmWebView.kt` |
+| Tweak the permission allowlist for `browse.*` | `browseAllowedSchemes` in `Views/PMMapView.swift` | `browseAllowedSchemes` in `PmWebView.kt` |
+| Add a new locale to the `culture` enum | `Types/PMLocale.swift` | n/a — Android derives `culture` from `Accept-Language` (the Flutter plugin folds `locale` into the `culture` query parameter to bridge the gap) |
+| Add a new public API property | `Views/PMMapView.swift` *and* the forwarding shim in `ViewControllers/PMMainViewController.swift` | `PmWebView.kt` (plus the Flutter plugin's `PlatinumapsPlatformView.kt` if it needs Dart exposure) |
 
 When you change the canonical Android SDK module, copy the same files into
 `Android/sample/platinumaps-sdk/` (the trees must stay identical) and
