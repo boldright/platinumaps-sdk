@@ -1,6 +1,7 @@
 import Flutter
 import UIKit
 import XCTest
+@testable import platinumaps_flutter_sdk
 
 class RunnerTests: XCTestCase {
 
@@ -9,4 +10,134 @@ class RunnerTests: XCTestCase {
     // See https://developer.apple.com/documentation/xctest for more information about using XCTest.
   }
 
+}
+
+/// Unit tests for `PlatinumapsPlatformView.applyCreationArguments(_:to:)`.
+/// Lives in the example app's test target because that's the only
+/// place where the Flutter plugin's symbols and a full UIKit runtime
+/// are both available at test time.
+@MainActor
+final class PlatinumapsPlatformViewTests: XCTestCase {
+
+    func test_nilArguments_leaveTheMapViewAtItsDefaults() throws {
+        let mapView = PMMapView(frame: .zero)
+        PlatinumapsPlatformView.applyCreationArguments(nil, to: mapView)
+
+        XCTAssertNil(mapView.mapSlug)
+        XCTAssertEqual(mapView.mapQuery, [:])
+        XCTAssertNil(mapView.mapLocale)
+        XCTAssertNil(mapView.appStoreId)
+        XCTAssertNil(mapView.userId)
+        XCTAssertNil(mapView.secretKey)
+        XCTAssertEqual(mapView.offsetBottom, 0)
+        XCTAssertNil(mapView.beaconUuid)
+        XCTAssertNil(mapView.launchURL)
+    }
+
+    func test_mapSlugAndQueryParamsAreApplied() throws {
+        let mapView = PMMapView(frame: .zero)
+        PlatinumapsPlatformView.applyCreationArguments(
+            [
+                "mapSlug": "demo/sr999",
+                "queryParams": ["key1": "value1"],
+            ],
+            to: mapView
+        )
+
+        XCTAssertEqual(mapView.mapSlug, "demo/sr999")
+        XCTAssertEqual(mapView.mapQuery, ["key1": "value1"])
+    }
+
+    func test_localeStringIsTranslatedToPMLocale() throws {
+        let mapView = PMMapView(frame: .zero)
+        PlatinumapsPlatformView.applyCreationArguments(
+            ["mapSlug": "demo", "locale": "zh-cn"],
+            to: mapView
+        )
+
+        XCTAssertEqual(mapView.mapLocale, .zhHans)
+    }
+
+    func test_unknownLocaleStringIsIgnoredRatherThanCrashing() throws {
+        // The Dart enum is exhaustive, but a misbehaving caller could
+        // send an unknown string through the platform channel. Reject
+        // it silently instead of crashing the host app.
+        let mapView = PMMapView(frame: .zero)
+        PlatinumapsPlatformView.applyCreationArguments(
+            ["mapSlug": "demo", "locale": "klingon"],
+            to: mapView
+        )
+
+        XCTAssertNil(mapView.mapLocale)
+    }
+
+    func test_appInfoFieldsAreApplied() throws {
+        let mapView = PMMapView(frame: .zero)
+        PlatinumapsPlatformView.applyCreationArguments(
+            [
+                "mapSlug": "demo",
+                "appStoreId": "1234567890",
+                "userId": "u-1",
+                "secretKey": "s-1",
+                "offsetBottom": 24,
+            ],
+            to: mapView
+        )
+
+        XCTAssertEqual(mapView.appStoreId, "1234567890")
+        XCTAssertEqual(mapView.userId, "u-1")
+        XCTAssertEqual(mapView.secretKey, "s-1")
+        XCTAssertEqual(mapView.offsetBottom, 24)
+    }
+
+    func test_beaconUuidIsApplied() throws {
+        let mapView = PMMapView(frame: .zero)
+        PlatinumapsPlatformView.applyCreationArguments(
+            [
+                "mapSlug": "demo",
+                "beacon": [
+                    "uuid": "01234567-89AB-CDEF-0123-456789ABCDEF",
+                    "minSample": 4,
+                ],
+            ],
+            to: mapView
+        )
+
+        XCTAssertEqual(
+            mapView.beaconUuid,
+            "01234567-89AB-CDEF-0123-456789ABCDEF"
+        )
+    }
+
+    func test_launchUrlIsParsedAndAppliedWhenValid() throws {
+        let mapView = PMMapView(frame: .zero)
+        PlatinumapsPlatformView.applyCreationArguments(
+            [
+                "mapSlug": "demo",
+                "launchUrl": "https://platinumaps.jp/maps/demo/sr999",
+            ],
+            to: mapView
+        )
+
+        XCTAssertEqual(
+            mapView.launchURL,
+            URL(string: "https://platinumaps.jp/maps/demo/sr999")
+        )
+    }
+
+    func test_malformedLaunchUrlIsIgnored() throws {
+        // URL(string:) succeeds for almost any input, but an empty
+        // string returns nil. Use that to verify the parser doesn't
+        // assign nil-typed garbage to launchURL.
+        let mapView = PMMapView(frame: .zero)
+        PlatinumapsPlatformView.applyCreationArguments(
+            [
+                "mapSlug": "demo",
+                "launchUrl": "",
+            ],
+            to: mapView
+        )
+
+        XCTAssertNil(mapView.launchURL)
+    }
 }
