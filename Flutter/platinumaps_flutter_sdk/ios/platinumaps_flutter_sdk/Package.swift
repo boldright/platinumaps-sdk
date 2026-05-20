@@ -40,7 +40,7 @@ let package = Package(
     ],
     products: [
         .library(
-            name: "platinumaps-flutter-sdk",
+            name: "platinumaps_flutter_sdk",
             targets: ["platinumaps_flutter_sdk"]
         ),
     ],

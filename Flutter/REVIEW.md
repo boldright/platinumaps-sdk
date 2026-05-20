@@ -57,8 +57,8 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
   - #4 修正後、iOS は完全にフォールバック動作。Android は `browse.inapp` (non-shared) のみ CustomTabs フォールバック、`browse.app` / `map.navigate` / shared-cookie は silent drop。この差を dartdoc にプラットフォーム別箇条書きで明記。
 - ❌ **#24** iOS XCTest `test_malformedLaunchUrlIsIgnored` のコメントが事実と逆ではないか — `Flutter/example/ios/RunnerTests/RunnerTests.swift:128`
   - 受容（コメントは「URL(string:) succeeds for almost any input, but an empty string returns nil」と書いており、iOS 17+ の挙動として正しい。レビュー指摘の方が間違い）。
-- ⬜ **#25** iOS Plugin の SwiftPM library 名がハイフン (`platinumaps-flutter-sdk`) — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Package.swift:42`
-  - 実機 plugin injection の動作確認後に判断。動かないようなら underscore 名へ変更。
+- ✅ **#25** iOS Plugin の SwiftPM library 名がハイフン (`platinumaps-flutter-sdk`) — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Package.swift:42`
+  - SwiftPM の慣例（package 名 / library product 名 / target 名すべて一致）と Flutter plugin injection の想定に合わせ、underscore 名 (`platinumaps_flutter_sdk`) に統一。
 - ❌ **#26** iOS PMMapView の `presentationViewController` 拡張と `pushLaunchURL` の responder walk が重複 — `iOS/platinumaps-sdk/Views/PMMapView.swift:457`
   - 受容（presentationViewController は modal 最前面まで降りる、pushLaunchURL は所有 VC で止まる必要があるという意味的に異なる責務。共通ヘルパに抽出するメリットが薄い）。
 - ✅ **#27** example アプリの DESIGN §7 全 public API デモ要件 (beacon, etc.) 未達 — `Flutter/example/lib/main.dart:46`
