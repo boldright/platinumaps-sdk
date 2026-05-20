@@ -91,19 +91,40 @@ internal class PlatinumapsPlatformView(
 
     override fun getView(): View = webView
 
-    override fun onFlutterViewAttached(flutterView: View) {
-        webView.activityResume()
-    }
-
-    override fun onFlutterViewDetached() {
-        webView.activityPause()
-    }
-
     override fun dispose() {
         methodChannel.setMethodCallHandler(null)
         webView.onOpenLinkListener = null
         webView.activityDestroy()
         onDispose(viewId)
+    }
+
+    /**
+     * Forwards Activity `onResume` from the plugin's lifecycle
+     * observer. Resume is driven by the host Activity going to the
+     * foreground, not by the PlatformView attaching to the Flutter
+     * view hierarchy — those events do not coincide.
+     */
+    fun activityResume() {
+        webView.activityResume()
+    }
+
+    /**
+     * Forwards Activity `onPause` from the plugin's lifecycle
+     * observer. Without this, GPS and BLE scanning continue while
+     * the app sits in the background.
+     */
+    fun activityPause() {
+        webView.activityPause()
+    }
+
+    /**
+     * Forwards Activity `onDestroy`. `dispose()` already calls
+     * `activityDestroy()` on its own, but the host Activity can go
+     * away while the PlatformView is still attached, in which case
+     * the lifecycle event arrives first.
+     */
+    fun activityDestroy() {
+        webView.activityDestroy()
     }
 
     override fun onOpenLink(url: Uri, sharedCookie: Boolean) {

@@ -44,4 +44,16 @@ internal class PlatinumapsPlatformViewFactory(
     fun forwardActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         activeViews.values.forEach { it.handleActivityResult(requestCode, resultCode, data) }
     }
+
+    fun forwardActivityResume() {
+        activeViews.values.forEach { it.activityResume() }
+    }
+
+    fun forwardActivityPause() {
+        activeViews.values.forEach { it.activityPause() }
+    }
+
+    fun forwardActivityDestroy() {
+        activeViews.values.forEach { it.activityDestroy() }
+    }
 }
