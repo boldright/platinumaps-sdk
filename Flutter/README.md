@@ -109,8 +109,8 @@ the map.
 | `queryParams` | Extra query string entries on the map URL | ✓ | ✓ |
 | `locale` | Forces the map UI language | ✓ | ✓ |
 | `appStoreId` | App Store ID consumed by `app.review` | ✓ | — |
-| `userId` | Opaque user identifier exposed to the web layer | ✓ | ✓ |
-| `secretKey` | Opaque shared secret exposed to the web layer | ✓ | ✓ |
+| `userId` | Opaque user identifier exposed to the web layer | ✓ | — |
+| `secretKey` | Opaque shared secret exposed to the web layer | ✓ | — |
 | `offsetBottom` | Reports a zeroed bottom safe-area inset to the web | ✓ | — |
 | `coverImage` | Splash image shown until `web.ready` | ✓ | — |
 | `beacon` | iBeacon ranging configuration | ✓ | ✓ |

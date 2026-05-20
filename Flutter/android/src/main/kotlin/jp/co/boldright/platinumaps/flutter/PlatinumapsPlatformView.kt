@@ -34,7 +34,21 @@ internal class PlatinumapsPlatformView(
 
         val mapSlug = (args?.get("mapSlug") as? String).orEmpty()
         @Suppress("UNCHECKED_CAST")
-        val queryParams = args?.get("queryParams") as? Map<String, String>
+        val rawQueryParams = args?.get("queryParams") as? Map<String, String>
+        val locale = args?.get("locale") as? String
+        // `locale` is folded into the `culture` query parameter so the
+        // Dart API reaches the Android web layer through the same path
+        // the web app already understands. The native Android SDK has
+        // no first-class `mapLocale` field today (CLAUDE.md notes that
+        // Android derives culture from Accept-Language), but the web
+        // app honours an explicit `culture=` override regardless of
+        // platform.
+        val queryParams = when {
+            locale == null -> rawQueryParams
+            rawQueryParams == null -> mapOf("culture" to locale)
+            else -> rawQueryParams + ("culture" to locale)
+        }
+
         @Suppress("UNCHECKED_CAST")
         val beaconMap = args?.get("beacon") as? Map<String, Any?>
         val beaconOptions = beaconMap?.let {
@@ -47,10 +61,11 @@ internal class PlatinumapsPlatformView(
         }
 
         // `offsetBottom`, `launchUrl`, `userId`, `secretKey`,
-        // `appStoreId`, and `locale` are not yet plumbed through to
-        // the Android native SDK — the existing `PmMapOptions` does
-        // not have first-class fields for them. Tracked as follow-up
-        // work in `Flutter/DESIGN.md` §8.
+        // `appStoreId`, and `coverImage` are accepted by the Dart API
+        // for forward compatibility but the existing `PmMapOptions`
+        // does not have first-class fields for them on Android. The
+        // README documents the asymmetry and DESIGN.md §8 #5 tracks
+        // the parity backlog.
         val options = PmMapOptions(
             mapPath = mapSlug,
             queryParams = queryParams,
