@@ -69,8 +69,20 @@ internal class PlatinumapsPlatformView(
          */
         internal fun buildMapOptions(args: Map<String, Any?>?): PmMapOptions {
             val mapSlug = (args?.get("mapSlug") as? String).orEmpty()
-            @Suppress("UNCHECKED_CAST")
-            val rawQueryParams = args?.get("queryParams") as? Map<String, String>
+            // The Dart side declares `Map<String, String>?` for
+            // queryParams, but the platform channel runtime erases the
+            // generics: what arrives at the JVM is a `Map<*, *>` whose
+            // values come back as `Any?`. Filter explicitly so a stray
+            // non-String value cannot crash later inside
+            // `appendQueryParameter`.
+            val rawQueryParams: Map<String, String>? =
+                (args?.get("queryParams") as? Map<*, *>)?.entries
+                    ?.mapNotNull { (rawKey, rawValue) ->
+                        val key = rawKey as? String ?: return@mapNotNull null
+                        val value = rawValue as? String ?: return@mapNotNull null
+                        key to value
+                    }
+                    ?.toMap()
             val locale = args?.get("locale") as? String
             val queryParams = when {
                 locale == null -> rawQueryParams
@@ -78,8 +90,14 @@ internal class PlatinumapsPlatformView(
                 else -> rawQueryParams + ("culture" to locale)
             }
 
-            @Suppress("UNCHECKED_CAST")
-            val beaconMap = args?.get("beacon") as? Map<String, Any?>
+            val beaconMap = (args?.get("beacon") as? Map<*, *>)?.let { raw ->
+                raw.entries
+                    .mapNotNull { (rawKey, rawValue) ->
+                        val key = rawKey as? String ?: return@mapNotNull null
+                        key to rawValue
+                    }
+                    .toMap()
+            }
             val beaconOptions = beaconMap?.let {
                 PmMapBeaconOptions(
                     uuid = (it["uuid"] as? String).orEmpty(),

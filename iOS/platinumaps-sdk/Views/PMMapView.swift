@@ -42,6 +42,14 @@ public protocol PMMapViewDelegate: AnyObject {
 ///     `commandCallback('<name>', '<requestId>', <argsJSON>)` and unsolicited
 ///     pushes via `commandPush('<name>', <argsJSON>)`. All three arguments are
 ///     JSON-encoded to keep attacker-influenced data out of JS context.
+///
+/// Configuration: every public `var` below (`mapSlug`, `mapQuery`,
+/// `mapLocale`, `appStoreId`, `coverImage`, `userId`, `secretKey`,
+/// `offsetBottom`, `launchURL`, `beaconUuid`, `isWebViewInspectable`)
+/// is consumed exactly once during `performFirstAttachSetup` on the
+/// first `didMoveToWindow`. Setting any of them *after* the view has
+/// attached to a window is a no-op — rebuild the view with a fresh
+/// configuration if you need to change them at runtime.
 public class PMMapView: UIView {
 
     /// The set of URL schemes the SDK is willing to hand to

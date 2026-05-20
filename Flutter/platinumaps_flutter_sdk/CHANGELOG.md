@@ -3,7 +3,7 @@
 All notable changes to this package are documented in this file. The
 format follows [Keep a Changelog](https://keepachangelog.com).
 
-## [0.1.0] - Unreleased
+## [Unreleased]
 
 Initial pre-release. The package is publishable to pub.dev once the
 remaining roadmap items (DESIGN.md §9 steps 6–8) are complete; the
@@ -56,11 +56,9 @@ API surface is considered unstable until 1.0.0.
   stacked on top of the map to exercise the `§6 #3` gesture-
   passthrough composition case.
 - Test suite covering the three DESIGN §7 layers:
-  - Dart unit tests (`test/`, ten cases) for the public API.
+  - Dart unit tests (`test/`) for the public API.
   - Android JUnit tests for the plugin's `buildMapOptions` parser.
   - iOS XCTest cases (in the example app's `RunnerTests` target)
     for the plugin's `applyCreationArguments(_:to:)` helper.
   - `integration_test/` smoke checks that the example app boots and
     mounts `PlatinumapsMapView` on real devices.
-
-[0.1.0]: https://github.com/boldright/platinumaps-sdk/releases/tag/flutter-v0.1.0

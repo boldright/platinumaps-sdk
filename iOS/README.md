@@ -131,13 +131,16 @@ Universal Link / Custom URL Scheme **after** `PMMainViewController` is
 already on screen. URLs received before `web.ready` are stashed and
 replayed automatically.
 
-### `PMMainViewControllerDelegate`
+### `PMMapViewDelegate` (a.k.a. `PMMainViewControllerDelegate`)
 
 ```swift
 @MainActor
-protocol PMMainViewControllerDelegate: AnyObject {
+public protocol PMMapViewDelegate: AnyObject {
     func openLink(_ url: URL, sharedCookie: Bool)
 }
+
+// Backwards-compatible alias for hosts that adopted the original name.
+public typealias PMMainViewControllerDelegate = PMMapViewDelegate
 ```
 
 `sharedCookie == true` means the destination needs the current Platinumaps
@@ -175,5 +178,8 @@ actor. There is no need to hop queues from the host.
   `UINavigationController` if you want a close button.
 - It does not request notification permissions, analytics consent, or any
   permission other than location, camera, microphone, and bluetooth.
-- It does not retry network failures itself; the web layer surfaces its
-  own retry UI.
+- After `web.ready` it stops driving retries itself and trusts the web
+  layer to surface its own retry UI. While the *initial* load is still
+  in flight, the SDK does retry network failures internally with
+  exponential backoff (1, 2, 4, 8, 8, … seconds) — see
+  `scheduleNextRetry` in `Views/PMMapView.swift`.

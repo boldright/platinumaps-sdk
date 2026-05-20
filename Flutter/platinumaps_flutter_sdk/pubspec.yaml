@@ -5,6 +5,13 @@ homepage: https://github.com/boldright/platinumaps-sdk
 repository: https://github.com/boldright/platinumaps-sdk/tree/main/Flutter/platinumaps_flutter_sdk
 issue_tracker: https://github.com/boldright/platinumaps-sdk/issues
 
+topics:
+  - map
+  - webview
+  - location
+  - beacon
+  - platinumaps
+
 environment:
   sdk: ^3.4.0
   flutter: ">=3.22.0"

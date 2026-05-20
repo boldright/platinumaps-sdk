@@ -43,42 +43,62 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
   - arguments が non-Map / null / 型不正でも throw せず early return。url は `is! String` チェック、sharedCookie は `== true` 比較で false の sentinel に。
 - ✅ **#17** example の `_handleOpenLink` が `Future<void>` を返しエラーが捨てられる — `Flutter/example/lib/main.dart:32`
   - `try/catch` で wrap、`debugPrint` で stack ごとログ。
-- ⬜ **#18** 複数 PlatinumapsMapView 同時表示で permission/file chooser のルーティング衝突 — `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/jp/co/boldright/platinumaps/flutter/PlatinumapsPlatformViewFactory.kt:38`
-- ⬜ **#19** Android plugin: queryParams の unchecked cast が型不一致でクラッシュリスク — `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/jp/co/boldright/platinumaps/flutter/PlatinumapsPlatformView.kt:62`
-- ⬜ **#20** Android plugin: factory が `activity == null` を fallback context にし、permission request が無音失敗 — `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/jp/co/boldright/platinumaps/flutter/PlatinumapsPlatformViewFactory.kt:24`
+- ⬜ **#18** 複数 PlatinumapsMapView 同時表示で permission/file chooser のルーティング衝突 — `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/jp/co/boldright/platinumaps/flutter/PlatinumapsPlatformViewFactory.kt:38` （**要仕様確認**：SDK は internal で request code を照合して unrelated view が ignore する設計だが、複数 view 同時表示の実用ケース／契約を確認したい）
+- ✅ **#19** Android plugin: queryParams の unchecked cast が型不一致でクラッシュリスク — `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/jp/co/boldright/platinumaps/flutter/PlatinumapsPlatformView.kt:62`
+  - `Map<*, *>` 経由で値ごとに `as? String` を確認するパターンに置換。beacon map も同様に処理。`@Suppress("UNCHECKED_CAST")` 撤去。
+- ✅ **#20** Android plugin: factory が `activity == null` を fallback context にし、permission request が無音失敗 — `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/jp/co/boldright/platinumaps/flutter/PlatinumapsPlatformViewFactory.kt:24`
+  - `activity == null` の場合は `Log.w` で警告。fallback context は通常 Activity なので動くケースが多いが、engine-only パスに気付けるようにする。
 - ✅ **#21** Flutter README の Configuration テーブルで coverImage を iOS ✓ と記載 (#6 と関連) — `Flutter/platinumaps_flutter_sdk/README.md:115`
   - 両プラットフォームとも `—` に修正し、`Stack` でホスト側 Flutter splash を被せる回避策を説明。
-- ⬜ **#22** Flutter README の "Sample app: (to be added)" が陳腐化 — `Flutter/platinumaps_flutter_sdk/README.md:144`
+- ✅ **#22** Flutter README の "Sample app: (to be added)" が陳腐化 — `Flutter/platinumaps_flutter_sdk/README.md:144`
+  - example/ の説明文に置換。
 - ✅ **#23** Flutter README / dartdoc が「onOpenLink=null でネイティブ既定にフォールバック」と書くが iOS は #4、Android は `browse.app` のみフォールバック — `Flutter/platinumaps_flutter_sdk/lib/src/platinumaps_map_view.dart:102`
   - #4 修正後、iOS は完全にフォールバック動作。Android は `browse.inapp` (non-shared) のみ CustomTabs フォールバック、`browse.app` / `map.navigate` / shared-cookie は silent drop。この差を dartdoc にプラットフォーム別箇条書きで明記。
-- ⬜ **#24** iOS XCTest `test_malformedLaunchUrlIsIgnored` のコメントが事実と逆ではないか（iOS 17+ では nil を返すが、念のため OS バージョン依存性を明示） — `Flutter/example/ios/RunnerTests/RunnerTests.swift:128`
-- ⬜ **#25** iOS Plugin の SwiftPM library 名がハイフン (`platinumaps-flutter-sdk`) — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Package.swift:42`
-- ⬜ **#26** iOS PMMapView の `presentationViewController` 拡張と `pushLaunchURL` の responder walk が重複 — `iOS/platinumaps-sdk/Views/PMMapView.swift:457`
-- ⬜ **#27** example アプリの DESIGN §7 全 public API デモ要件 (beacon, etc.) 未達 — `Flutter/example/lib/main.dart:46`
+- ❌ **#24** iOS XCTest `test_malformedLaunchUrlIsIgnored` のコメントが事実と逆ではないか — `Flutter/example/ios/RunnerTests/RunnerTests.swift:128`
+  - 受容（コメントは「URL(string:) succeeds for almost any input, but an empty string returns nil」と書いており、iOS 17+ の挙動として正しい。レビュー指摘の方が間違い）。
+- ⬜ **#25** iOS Plugin の SwiftPM library 名がハイフン (`platinumaps-flutter-sdk`) — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Package.swift:42` （**要仕様確認**：Flutter の plugin injection が動作確認されているなら変更不要、underscored 名に統一するかは設計判断）
+- ❌ **#26** iOS PMMapView の `presentationViewController` 拡張と `pushLaunchURL` の responder walk が重複 — `iOS/platinumaps-sdk/Views/PMMapView.swift:457`
+  - 受容（presentationViewController は modal 最前面まで降りる、pushLaunchURL は所有 VC で止まる必要があるという意味的に異なる責務。共通ヘルパに抽出するメリットが薄い）。
+- ⬜ **#27** example アプリの DESIGN §7 全 public API デモ要件 (beacon, etc.) 未達 — `Flutter/example/lib/main.dart:46` （**要仕様確認**：beacon の placeholder uuid を入れる程度で良いか、本格的なデモ画面を作るか）
 - ✅ **#28** prepublish.py docstring のデフォルト出力先パス (`build/publish-snapshot/...`) が古い (実際は `/tmp/`) — `scripts/prepublish.py:25`
   - docstring を実際の `/tmp/platinumaps-publish-snapshot/...` に同期。
 - ❌ **#29** prepublish.py の Gradle/podspec の `_NEEDLE` 完全一致前提が脆い — `scripts/prepublish.py:136`
   - 受容（fail-loud で SystemExit + ファイル位置を示すメッセージが出るので、NEEDLE が陳腐化した瞬間にビルドが赤くなる）。将来 marker-comment 方式に移行する余地はあるが v0.1 では cost-benefit が見合わない。
 - ❌ **#30** prepublish.py の materialize_symlinks がファイル symlink 非対応・loop guard なし — `scripts/prepublish.py:118`
   - ファイル symlink は既に `SystemExit` で明示拒否済み (loud fail)。cycle は実運用上発生しない（リポジトリ管理下の symlink のみが対象、`.resolve()` が cycle を絡め取って失敗する）ため、v0.1 受容。
-- ⬜ **#31** iOS PMMapView deinit が non-main で呼ばれると `MainActor.assumeIsolated` がクラッシュ可能性 — `iOS/platinumaps-sdk/Views/PMMapView.swift:377`
-- ⬜ **#32** iOS Plugin Factory の `MainActor.assumeIsolated` が non-main 呼び出しでトラップ — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformViewFactory.swift:15`
-- ⬜ **#33** iOS PMMapView の公開 var が performFirstAttachSetup 後変更不可だが doc が不明示 — `iOS/platinumaps-sdk/Views/PMMapView.swift:84`
+- ❌ **#31** iOS PMMapView deinit が non-main で呼ばれると `MainActor.assumeIsolated` がクラッシュ可能性 — `iOS/platinumaps-sdk/Views/PMMapView.swift:377`
+  - 受容（UIView deallocation は UIKit の契約上 main thread で実行される。コミット 84e1260 で同じパターンが導入済み）。
+- ❌ **#32** iOS Plugin Factory の `MainActor.assumeIsolated` が non-main 呼び出しでトラップ — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformViewFactory.swift:15`
+  - 受容（Flutter PlatformView factory は main thread から呼ばれる契約。PMMapView 側の同パターンと整合）。
+- ✅ **#33** iOS PMMapView の公開 var が performFirstAttachSetup 後変更不可だが doc が不明示 — `iOS/platinumaps-sdk/Views/PMMapView.swift:84`
+  - クラス header に「全ての public var は performFirstAttachSetup で1回だけ消費される、attach 後の変更は no-op」を明記。
 - ✅ **#34** iOS plugin の applyCreationArguments の coverImage コメントが「opaque ImageProvider が wire 化されてない」前提だが、Dart 側は実は coverImage を送っていない (#6) — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformView.swift:31`
   - コメントを「Dart 側がそもそも creationParams に出さない」と正しく書き換え。
-- ⬜ **#35** iOS WebView の `didFinish` で `hasInitialLoadFailed` ラッチがクリアされない (pre-existing) — `iOS/platinumaps-sdk/Views/PMMapView.swift:534`
-- ⬜ **#36** iOS Podspec の `s.license` の相対パスが podspec 位置から1段上を指す。動作はするが慣例的でない — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk.podspec:22`
-- ⬜ **#37** Android plugin AndroidManifest が空。SDK が要求する permission を `<uses-permission>` で宣言しないと manifest merger が機能しない — `Flutter/platinumaps_flutter_sdk/android/src/main/AndroidManifest.xml:1`
-- ⬜ **#38** iOS README の PMMainViewControllerDelegate 説明 (typealias なのに独立 protocol のように記述) — `iOS/README.md:134`
-- ⬜ **#39** iOS README の retry 否定文 ("It does not retry network failures itself") が古い — `iOS/README.md:178`
-- ⬜ **#40** CLAUDE.md の app.info Command catalogue で offsetBottom の表記が混乱気味 — `CLAUDE.md:111`
-- ⬜ **#41** example pubspec の Dart SDK constraint (`^3.12.0`) と plugin (`^3.4.0`) が乖離 — `Flutter/example/pubspec.yaml:22`
-- ⬜ **#42** flutter_lints バージョン乖離 (plugin `^4.0.0`, example `^6.0.0`) — `Flutter/platinumaps_flutter_sdk/pubspec.yaml:19`
-- ⬜ **#43** CHANGELOG: `[0.1.0]` リンク先タグが未公開、`[0.1.0] - Unreleased` 書式も不慣例 — `Flutter/platinumaps_flutter_sdk/CHANGELOG.md:66`
-- ⬜ **#44** CHANGELOG: 「ten cases」と数字を直書きしているのが脆い — `Flutter/platinumaps_flutter_sdk/CHANGELOG.md:59`
-- ⬜ **#45** DESIGN §9 step 2 が 🟡 のままだが CI でビルド検証は済んでいる — `Flutter/DESIGN.md:642`
-- ⬜ **#46** pubspec.yaml に topics フィールドが無い (pana スコア向上余地) — `Flutter/platinumaps_flutter_sdk/pubspec.yaml:1`
-- ⬜ **#47** example の iOS Info.plist に `NSLocationAlwaysAndWhenInUseUsageDescription` 無し — `Flutter/example/ios/Runner/Info.plist:1`
-- ⬜ **#48** CI flutter-sdk-ci.yml に `flutter build apk --release` (proguard) 経路が無い — `.github/workflows/flutter-sdk-ci.yml:1`
-- ⬜ **#49** launchUrl の Dart 文字列が iOS で `URL(string:)` を通すだけで `javascript:` 等もそのまま web へ送られる — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformView.swift:70`
-- ⬜ **#50** i18n/strings.yaml に SDK Kotlin コードから参照されない未使用エントリ複数 (alert_settings/cancel/ok/yes/no/login, button_text_cancel, splash_image_description, qr_code_reader_message, dialog_*_camera_permission) — `i18n/strings.yaml:88`
+- ⬜ **#35** iOS WebView の `didFinish` で `hasInitialLoadFailed` ラッチがクリアされない (pre-existing) — `iOS/platinumaps-sdk/Views/PMMapView.swift:534` （**要仕様確認**：`web.ready` 受信時にクリアするのが現仕様。`didFinish` でクリアすると `web.ready` を待たずに hung 判定を解除してしまう可能性あり）
+- ❌ **#36** iOS Podspec の `s.license` の相対パスが podspec 位置から1段上を指す。動作はするが慣例的でない — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk.podspec:22`
+  - 受容（`../LICENSE` は podspec から見て `Flutter/platinumaps_flutter_sdk/LICENSE` を正しく指す。in-repo / snapshot どちらでも動作）。
+- ❌ **#37** Android plugin AndroidManifest が空。SDK が要求する permission を `<uses-permission>` で宣言しないと manifest merger が機能しない — `Flutter/platinumaps_flutter_sdk/android/src/main/AndroidManifest.xml:1`
+  - 受容（plugin 自身が permission を宣言すると host app が opt-out できなくなる。ビーコン非対応の host にも BLUETOOTH_SCAN を強要したくない。README で host が宣言すべき permission を明示するのが現方針）。
+- ✅ **#38** iOS README の PMMainViewControllerDelegate 説明 (typealias なのに独立 protocol のように記述) — `iOS/README.md:134`
+  - PMMapViewDelegate を正本として書き直し、typealias の存在を明記。
+- ✅ **#39** iOS README の retry 否定文 ("It does not retry network failures itself") が古い — `iOS/README.md:178`
+  - 初回読み込みは SDK が exponential backoff で retry する、web.ready 後は web 層に委ねる、と訂正。
+- ✅ **#40** CLAUDE.md の app.info Command catalogue で offsetBottom の表記が混乱気味 — `CLAUDE.md:111`
+  - 「Returns userId and secretKey; iOS additionally returns offsetBottom」に整理。
+- ✅ **#41** example pubspec の Dart SDK constraint (`^3.12.0`) と plugin (`^3.4.0`) が乖離 — `Flutter/example/pubspec.yaml:22`
+  - example を plugin の floor (`^3.4.0`) に合わせる。
+- ⬜ **#42** flutter_lints バージョン乖離 (plugin `^4.0.0`, example `^6.0.0`) — `Flutter/platinumaps_flutter_sdk/pubspec.yaml:19` （**要仕様確認**：plugin 側を ^6.0.0 にすべきか、example 側を ^4.0.0 に下げるか。Flutter 3.22 環境での互換性）
+- ✅ **#43** CHANGELOG: `[0.1.0]` リンク先タグが未公開、`[0.1.0] - Unreleased` 書式も不慣例 — `Flutter/platinumaps_flutter_sdk/CHANGELOG.md:66`
+  - `[Unreleased]` 見出しに変更し、まだ存在しない release tag リンクを削除。release 時に `[0.1.0] - YYYY-MM-DD` + リンクを追加する形へ。
+- ✅ **#44** CHANGELOG: 「ten cases」と数字を直書きしているのが脆い — `Flutter/platinumaps_flutter_sdk/CHANGELOG.md:59`
+  - 数字を削除し「Dart unit tests for the public API」に。
+- ✅ **#45** DESIGN §9 step 2 が 🟡 のままだが CI でビルド検証は済んでいる — `Flutter/DESIGN.md:642`
+  - ✅ done に更新し、CI の iOS Simulator ビルド + XCTest が gate を満たすことを明記。
+- ✅ **#46** pubspec.yaml に topics フィールドが無い (pana スコア向上余地) — `Flutter/platinumaps_flutter_sdk/pubspec.yaml:1`
+  - `topics: [map, webview, location, beacon, platinumaps]` を追加。
+- ❌ **#47** example の iOS Info.plist に `NSLocationAlwaysAndWhenInUseUsageDescription` 無し — `Flutter/example/ios/Runner/Info.plist:1`
+  - 受容（SDK は `requestWhenInUseAuthorization` のみ使用、Always 権限は要求しない。Always 用 description キーは Always permission を要求するアプリのみ必須）。
+- ⬜ **#48** CI flutter-sdk-ci.yml に `flutter build apk --release` (proguard) 経路が無い — `.github/workflows/flutter-sdk-ci.yml:1` （**要仕様確認**：release/proguard ビルドを CI で検証するか。pubspec に proguard rules がない現状でも debug + RunnerTests でカバレッジは取れる）
+- ✅ **#49** launchUrl の Dart 文字列が iOS で `URL(string:)` を通すだけで `javascript:` 等もそのまま web へ送られる — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformView.swift:70`
+  - SDK の `browseAllowedSchemes` と同じ allowlist (`http`, `https`, `tel`, `mailto`, `sms`, `geo`) を iOS plugin の `launchUrl` 解析にも適用。
+- ⬜ **#50** i18n/strings.yaml に SDK Kotlin コードから参照されない未使用エントリ複数 (alert_settings/cancel/ok/yes/no/login, button_text_cancel, splash_image_description, qr_code_reader_message, dialog_*_camera_permission) — `i18n/strings.yaml:88` （**要仕様確認**：これらは pre-existing の Android XML resources。削除して良いか、将来の UI 拡張に備えて残すか）

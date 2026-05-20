@@ -108,7 +108,7 @@ vector.
 | `browse.app` | Hand a URL to the system for handling | ✓ | ✓ |
 | `browse.inapp` | Open in an in-app browser (optionally shared-cookie) | ✓ | ✓ |
 | `map.navigate` | Open in the native maps app | ✓ | ✓ |
-| `app.info` | Return `userId`, `secretKey`, `offsetBottom` (iOS adds `offsetBottom`) | ✓ | ✓ |
+| `app.info` | Return `userId` and `secretKey`; iOS additionally returns `offsetBottom` | ✓ | ✓ |
 | `app.detect` | Reserved | stub | stub |
 | `app.review` | Open the store review page | ✓ | ✓ |
 | `stamprally.qrcode` | Reserved | stub | — |

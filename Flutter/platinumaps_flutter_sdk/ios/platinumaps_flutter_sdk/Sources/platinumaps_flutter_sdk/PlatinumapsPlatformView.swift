@@ -12,6 +12,13 @@ import UIKit
 @MainActor
 final class PlatinumapsPlatformView: NSObject, FlutterPlatformView, PMMapViewDelegate {
 
+    /// URL schemes the plugin will forward to `PMMapView.launchURL`.
+    /// Matches the SDK's `browseAllowedSchemes` so the same
+    /// allowlist applies to host-supplied launch URLs.
+    private static let allowedLaunchUrlSchemes: Set<String> = [
+        "http", "https", "tel", "mailto", "sms", "geo",
+    ]
+
     private let mapView: PMMapView
     private let methodChannel: FlutterMethodChannel
 
@@ -119,7 +126,15 @@ final class PlatinumapsPlatformView: NSObject, FlutterPlatformView, PMMapViewDel
             mapView.mapQuery = extras
         }
         if let launchUrlString = args?["launchUrl"] as? String,
-           let launchUrl = URL(string: launchUrlString) {
+           let launchUrl = URL(string: launchUrlString),
+           Self.allowedLaunchUrlSchemes.contains(launchUrl.scheme?.lowercased() ?? "") {
+            // The web layer eventually echoes `launchUrl` back through
+            // its own command flow, so the Flutter host can stage a
+            // `javascript:` or `intent:`-style URL via the Dart API
+            // and reach the inside of the PlatformView's WebView.
+            // Mirror the SDK's `browseAllowedSchemes` allowlist here
+            // so the same defence-in-depth applies to host-supplied
+            // launch URLs.
             mapView.launchURL = launchUrl
         }
     }

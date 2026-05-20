@@ -145,7 +145,11 @@ above the map in a `Stack` until the parity work in `DESIGN.md`
 
 ## Sample app
 
-A runnable sample lives at [`example/`](example/) (to be added).
+A runnable sample lives at [`example/`](example/). It mounts a
+`PlatinumapsMapView` against the public demo map, wires `onOpenLink`
+through `url_launcher`, and stacks a small Flutter overlay above the
+PlatformView so the gesture-passthrough composition case from
+DESIGN.md §6 is exercised end-to-end.
 
 ## Reporting issues
 

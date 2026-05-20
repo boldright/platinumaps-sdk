@@ -3,6 +3,7 @@ package jp.co.boldright.platinumaps.flutter
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.StandardMessageCodec
 import io.flutter.plugin.platform.PlatformView
@@ -24,6 +25,19 @@ internal class PlatinumapsPlatformViewFactory(
     override fun create(context: Context, viewId: Int, args: Any?): PlatformView {
         @Suppress("UNCHECKED_CAST")
         val params = args as? Map<String, Any?>
+        if (activity == null) {
+            // In a normal `FlutterActivity` lifetime `activity` is set
+            // by `onAttachedToActivity` before Flutter calls into this
+            // factory, and the `context` Flutter passes in is the same
+            // Activity. Engine-only or headless engine setups can
+            // trigger this path; downstream permission requests need
+            // a real Activity, so flag the fallback for diagnosis.
+            Log.w(
+                "PlatinumapsFlutter",
+                "PlatformView created before onAttachedToActivity ran; " +
+                    "permission prompts may not surface until the host attaches.",
+            )
+        }
         val view = PlatinumapsPlatformView(
             context = activity ?: context,
             messenger = messenger,
