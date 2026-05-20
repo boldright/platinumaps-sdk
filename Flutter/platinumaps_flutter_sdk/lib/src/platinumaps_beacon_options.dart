@@ -36,9 +36,9 @@ class PlatinumapsBeaconOptions {
 
   /// Wire form sent across the platform channel.
   Map<String, Object?> toMap() => {
-        'uuid': uuid,
-        if (minSample != null) 'minSample': minSample,
-        if (maxHistory != null) 'maxHistory': maxHistory,
-        if (memo != null) 'memo': memo,
-      };
+    'uuid': uuid,
+    if (minSample != null) 'minSample': minSample,
+    if (maxHistory != null) 'maxHistory': maxHistory,
+    if (memo != null) 'memo': memo,
+  };
 }

@@ -59,28 +59,30 @@ void main() {
   });
 
   group('PlatinumapsOpenLinkCallback', () {
-    test('callback signature accepts http and platinumaps-shared-cookie urls',
-        () {
-      // Smoke-checks the typedef shape. Schemes outside the native
-      // allowlist (http, https, tel, mailto, sms, geo) are dropped by
-      // the native SDK before the callback fires; this test only
-      // verifies the callback is invokable for whitelisted schemes.
-      Uri? lastUrl;
-      bool? lastShared;
-      void callback(Uri url, {required bool sharedCookie}) {
-        lastUrl = url;
-        lastShared = sharedCookie;
-      }
+    test(
+      'callback signature accepts http and platinumaps-shared-cookie urls',
+      () {
+        // Smoke-checks the typedef shape. Schemes outside the native
+        // allowlist (http, https, tel, mailto, sms, geo) are dropped by
+        // the native SDK before the callback fires; this test only
+        // verifies the callback is invokable for whitelisted schemes.
+        Uri? lastUrl;
+        bool? lastShared;
+        void callback(Uri url, {required bool sharedCookie}) {
+          lastUrl = url;
+          lastShared = sharedCookie;
+        }
 
-      callback(Uri.parse('https://example.com'), sharedCookie: false);
-      expect(lastUrl, Uri.parse('https://example.com'));
-      expect(lastShared, isFalse);
+        callback(Uri.parse('https://example.com'), sharedCookie: false);
+        expect(lastUrl, Uri.parse('https://example.com'));
+        expect(lastShared, isFalse);
 
-      callback(
-        Uri.parse('https://platinumaps.jp/maps/demo/reward'),
-        sharedCookie: true,
-      );
-      expect(lastShared, isTrue);
-    });
+        callback(
+          Uri.parse('https://platinumaps.jp/maps/demo/reward'),
+          sharedCookie: true,
+        );
+        expect(lastShared, isTrue);
+      },
+    );
   });
 }

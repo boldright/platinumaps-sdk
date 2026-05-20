@@ -24,15 +24,21 @@ void main() {
 
     test('every enum value has a non-empty code', () {
       for (final locale in PlatinumapsLocale.values) {
-        expect(locale.code, isNotEmpty,
-            reason: 'locale $locale must declare a non-empty wire code');
+        expect(
+          locale.code,
+          isNotEmpty,
+          reason: 'locale $locale must declare a non-empty wire code',
+        );
       }
     });
 
     test('codes are unique across all enum values', () {
       final codes = PlatinumapsLocale.values.map((l) => l.code).toList();
-      expect(codes.toSet().length, codes.length,
-          reason: 'PlatinumapsLocale codes must not collide');
+      expect(
+        codes.toSet().length,
+        codes.length,
+        reason: 'PlatinumapsLocale codes must not collide',
+      );
     });
   });
 }

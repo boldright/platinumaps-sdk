@@ -25,18 +25,20 @@ void main() {
       });
     });
 
-    test('omits null optional fields rather than emitting an explicit null',
-        () {
-      const options = PlatinumapsBeaconOptions(
-        uuid: sampleUuid,
-        minSample: 3,
-        // maxHistory and memo intentionally left null
-      );
-      final map = options.toMap();
-      expect(map, containsPair('uuid', sampleUuid));
-      expect(map, containsPair('minSample', 3));
-      expect(map.containsKey('maxHistory'), isFalse);
-      expect(map.containsKey('memo'), isFalse);
-    });
+    test(
+      'omits null optional fields rather than emitting an explicit null',
+      () {
+        const options = PlatinumapsBeaconOptions(
+          uuid: sampleUuid,
+          minSample: 3,
+          // maxHistory and memo intentionally left null
+        );
+        final map = options.toMap();
+        expect(map, containsPair('uuid', sampleUuid));
+        expect(map, containsPair('minSample', 3));
+        expect(map.containsKey('maxHistory'), isFalse);
+        expect(map.containsKey('memo'), isFalse);
+      },
+    );
   });
 }

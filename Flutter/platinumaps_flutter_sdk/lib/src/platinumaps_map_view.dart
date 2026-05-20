@@ -17,10 +17,8 @@ import 'platinumaps_locale.dart';
 /// Schemes are restricted by the native SDK to a conservative
 /// allowlist (`http`, `https`, `tel`, `mailto`, `sms`, `geo`) before
 /// the callback fires.
-typedef PlatinumapsOpenLinkCallback = void Function(
-  Uri url, {
-  required bool sharedCookie,
-});
+typedef PlatinumapsOpenLinkCallback =
+    void Function(Uri url, {required bool sharedCookie});
 
 /// Embeds the Platinumaps web map as a Flutter widget.
 ///
