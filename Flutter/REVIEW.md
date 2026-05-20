@@ -31,7 +31,8 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
   - `mapLocale` が non-nil の場合、`mapQuery` 内の `culture` キーを skip。Android plugin の last-write-wins マージと同じセマンティクス（locale 優先）。
 - ✅ **#11** Flutter example の Android main/AndroidManifest.xml に `INTERNET` 欠落 (release ビルドで WebView が動かない) — `Flutter/example/android/app/src/main/AndroidManifest.xml:1`
   - `<uses-permission android:name="android.permission.INTERNET" />` を main manifest に追加。
-- ⬜ **#12** example の `path: ../platinumaps_flutter_sdk` は published 時に example が同梱されると壊れる — `Flutter/example/pubspec.yaml:39`
+- ✅ **#12** example の `path: ../platinumaps_flutter_sdk` は published 時に example が同梱されると壊れる — `Flutter/example/pubspec.yaml:39`
+  - `scripts/prepublish.py` に `rewrite_example_pubspec()` を追加。in-repo dev では `path: ../platinumaps_flutter_sdk`（`Flutter/example/`から見て正解）のまま、publish snapshot 内では `path: ../`（plugin root への相対）に書き換える。
 - ✅ **#13** iOS PMMapView.swift に typo "fucn" — `iOS/platinumaps-sdk/Views/PMMapView.swift:1320`
   - `func` に修正。
 - ✅ **#14** iOS plugin PlatinumapsPlatformView クラスに `@MainActor` 注釈なし — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformView.swift:7`
@@ -52,9 +53,12 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
 - ⬜ **#25** iOS Plugin の SwiftPM library 名がハイフン (`platinumaps-flutter-sdk`) — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Package.swift:42`
 - ⬜ **#26** iOS PMMapView の `presentationViewController` 拡張と `pushLaunchURL` の responder walk が重複 — `iOS/platinumaps-sdk/Views/PMMapView.swift:457`
 - ⬜ **#27** example アプリの DESIGN §7 全 public API デモ要件 (beacon, etc.) 未達 — `Flutter/example/lib/main.dart:46`
-- ⬜ **#28** prepublish.py docstring のデフォルト出力先パス (`build/publish-snapshot/...`) が古い (実際は `/tmp/`) — `scripts/prepublish.py:25`
-- ⬜ **#29** prepublish.py の Gradle/podspec の `_NEEDLE` 完全一致前提が脆い — `scripts/prepublish.py:136`
-- ⬜ **#30** prepublish.py の materialize_symlinks がファイル symlink 非対応・loop guard なし — `scripts/prepublish.py:118`
+- ✅ **#28** prepublish.py docstring のデフォルト出力先パス (`build/publish-snapshot/...`) が古い (実際は `/tmp/`) — `scripts/prepublish.py:25`
+  - docstring を実際の `/tmp/platinumaps-publish-snapshot/...` に同期。
+- ❌ **#29** prepublish.py の Gradle/podspec の `_NEEDLE` 完全一致前提が脆い — `scripts/prepublish.py:136`
+  - 受容（fail-loud で SystemExit + ファイル位置を示すメッセージが出るので、NEEDLE が陳腐化した瞬間にビルドが赤くなる）。将来 marker-comment 方式に移行する余地はあるが v0.1 では cost-benefit が見合わない。
+- ❌ **#30** prepublish.py の materialize_symlinks がファイル symlink 非対応・loop guard なし — `scripts/prepublish.py:118`
+  - ファイル symlink は既に `SystemExit` で明示拒否済み (loud fail)。cycle は実運用上発生しない（リポジトリ管理下の symlink のみが対象、`.resolve()` が cycle を絡め取って失敗する）ため、v0.1 受容。
 - ⬜ **#31** iOS PMMapView deinit が non-main で呼ばれると `MainActor.assumeIsolated` がクラッシュ可能性 — `iOS/platinumaps-sdk/Views/PMMapView.swift:377`
 - ⬜ **#32** iOS Plugin Factory の `MainActor.assumeIsolated` が non-main 呼び出しでトラップ — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformViewFactory.swift:15`
 - ⬜ **#33** iOS PMMapView の公開 var が performFirstAttachSetup 後変更不可だが doc が不明示 — `iOS/platinumaps-sdk/Views/PMMapView.swift:84`

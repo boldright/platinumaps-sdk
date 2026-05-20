@@ -23,10 +23,11 @@ Usage:
 
     python3 scripts/prepublish.py [--output <dir>]
 
-By default writes to `build/publish-snapshot/platinumaps_flutter_sdk/`.
-After running, verify with:
+By default writes to `/tmp/platinumaps-publish-snapshot/platinumaps_flutter_sdk/`
+— a path outside the repository so the snapshot escapes the repo's
+`.gitignore` rules. After running, verify with:
 
-    cd build/publish-snapshot/platinumaps_flutter_sdk
+    cd /tmp/platinumaps-publish-snapshot/platinumaps_flutter_sdk
     dart pub publish --dry-run
 
 The script is idempotent: re-running rebuilds the snapshot from
@@ -197,6 +198,40 @@ def rewrite_podspec(snapshot: Path) -> None:
     )
 
 
+_EXAMPLE_PUBSPEC_NEEDLE = """  platinumaps_flutter_sdk:
+    path: ../platinumaps_flutter_sdk
+"""
+
+_EXAMPLE_PUBSPEC_REPLACEMENT = """  platinumaps_flutter_sdk:
+    path: ../
+"""
+
+
+def rewrite_example_pubspec(snapshot: Path) -> None:
+    """Rewrite `example/pubspec.yaml` so its `path:` reference resolves
+    after publish. In-repo the example sits at `Flutter/example/` and
+    depends on `../platinumaps_flutter_sdk`. The publish snapshot
+    folds the example into the plugin (via the symlink at
+    `Flutter/platinumaps_flutter_sdk/example`), so the example's
+    pubspec needs `path: ../` to reach the plugin root. Without this
+    rewrite a consumer running `flutter pub get` inside the bundled
+    example would chase a `../platinumaps_flutter_sdk/` path that
+    does not exist."""
+    pubspec = snapshot / "example/pubspec.yaml"
+    if not pubspec.exists():
+        return
+    original = pubspec.read_text(encoding="utf-8")
+    if _EXAMPLE_PUBSPEC_NEEDLE not in original:
+        raise SystemExit(
+            f"could not find the in-repo `path: ../platinumaps_flutter_sdk` "
+            f"block in {pubspec}; the script is out of sync with the example"
+        )
+    pubspec.write_text(
+        original.replace(_EXAMPLE_PUBSPEC_NEEDLE, _EXAMPLE_PUBSPEC_REPLACEMENT),
+        encoding="utf-8",
+    )
+
+
 def write_pubignore(snapshot: Path) -> None:
     """Write an empty `.pubignore` so the snapshot escapes any parent
     `.gitignore`. By default the snapshot lands under `build/`, which the
@@ -235,6 +270,7 @@ def main() -> int:
     copy_android_sdk_sources(snapshot)
     rewrite_build_gradle(snapshot)
     rewrite_podspec(snapshot)
+    rewrite_example_pubspec(snapshot)
     write_pubignore(snapshot)
 
     print(f"Wrote publish snapshot to: {snapshot}")
