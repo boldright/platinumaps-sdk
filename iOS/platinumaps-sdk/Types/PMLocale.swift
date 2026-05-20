@@ -2,7 +2,7 @@ import Foundation
 
 /// Languages supported by the Platinumaps web app. The raw value matches the
 /// `culture` query parameter the web app expects.
-enum PMLocale: String, Sendable {
+public enum PMLocale: String, Sendable {
     /// Japanese.
     case ja = "ja"
 
