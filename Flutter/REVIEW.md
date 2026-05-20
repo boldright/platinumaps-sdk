@@ -90,9 +90,9 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
 - ✅ **#40** CLAUDE.md の app.info Command catalogue で offsetBottom の表記が混乱気味 — `CLAUDE.md:111`
   - 「Returns userId and secretKey; iOS additionally returns offsetBottom」に整理。
 - ✅ **#41** example pubspec の Dart SDK constraint (`^3.12.0`) と plugin (`^3.4.0`) が乖離 — `Flutter/example/pubspec.yaml:22`
-  - example を plugin の floor (`^3.4.0`) に合わせる。
+  - 当初 example を plugin の floor (`^3.4.0`) に合わせたが、 #42 で `flutter_lints ^6.0.0` を採用するため両者とも `^3.8.0` (= Dart 3.8 / Flutter 3.32) に引き上げ。
 - ✅ **#42** flutter_lints バージョン乖離 (plugin `^4.0.0`, example `^6.0.0`) — `Flutter/platinumaps_flutter_sdk/pubspec.yaml:19`
-  - 当初 plugin を `^6.0.0` に揃えたが、`flutter_lints 6.0.0` は Dart 3.8+ を要求するため plugin の `environment.sdk: ^3.4.0` と矛盾し CI の `pub get` が exit 66 で fail。Flutter 3.22 サポート維持のため両方を `^4.0.0` に揃え直し。SDK floor を Dart 3.8+ (Flutter 3.32+) に上げる方が将来的には正しいが、README が宣言する Flutter 3.22 サポートと整合させる方を優先。
+  - `flutter_lints 6.0.0` は Dart 3.8+ を要求するため、両 pubspec の `environment.sdk` を `^3.8.0` に、`flutter` constraint を `>=3.32.0` に引き上げ、`flutter_lints` を `^6.0.0` で統一。README の Requirements も Flutter 3.32+ に更新。Flutter 3.32 は 2025-05 リリースで本作業時点 (2026-05) には 1 年経過しており、サポート要件として妥当と判断。
 - ✅ **#43** CHANGELOG: `[0.1.0]` リンク先タグが未公開、`[0.1.0] - Unreleased` 書式も不慣例 — `Flutter/platinumaps_flutter_sdk/CHANGELOG.md:66`
   - `[Unreleased]` 見出しに変更し、まだ存在しない release tag リンクを削除。release 時に `[0.1.0] - YYYY-MM-DD` + リンクを追加する形へ。
 - ✅ **#44** CHANGELOG: 「ten cases」と数字を直書きしているのが脆い — `Flutter/platinumaps_flutter_sdk/CHANGELOG.md:59`

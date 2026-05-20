@@ -9,7 +9,7 @@ and Android SDKs in this repository (`iOS/`, `Android/`); see
 
 ## Requirements
 
-- Flutter 3.22 or later
+- Flutter 3.32 or later (Dart 3.8+)
 - iOS 16+
 - Android API 24+ (Android 7.0)
 
