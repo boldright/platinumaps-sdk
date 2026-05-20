@@ -18,7 +18,17 @@ import Foundation
 enum PMLocalizedStrings {
 
     static func string(forKey key: String) -> String {
-        let identifier = Bundle.main.preferredLocalizations.first
+        // Read the user's preferred language directly from `Locale`
+        // rather than `Bundle.main.preferredLocalizations`. The latter
+        // intersects the user's preferences with the *host app's*
+        // declared `CFBundleLocalizations`, which means a Flutter host
+        // that ships without ja/ko/zh-Hans/zh-Hant entries collapses
+        // SDK strings to the development language even on a Japanese
+        // device. `Locale.preferredLanguages` reflects the device's
+        // language order regardless of which localizations the host
+        // bundle advertises, which is the right contract for an SDK
+        // that carries its own translations.
+        let identifier = Locale.preferredLanguages.first
             ?? Locale.current.identifier
         let table = table(forLanguageCode: identifier)
         return table[key] ?? englishTable[key] ?? key

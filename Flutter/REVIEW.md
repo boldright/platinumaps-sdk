@@ -14,8 +14,8 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
   - `fatalError` を撤去し、空 mapSlug を `os.Logger` 経由の `.error` ログ + early return に変更。force-unwrap (`mapSlug!`) も guard で shadow した non-optional に置換。
 - ✅ **#4** iOS: Flutter plugin が delegate を常時セットし、Dart 側 onOpenLink=null の時にリンクが silent drop（ネイティブ既定の SFSafariViewController も発動しない） — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformView.swift:27`
   - Dart `_creationParams()` で `hasOpenLinkHandler: widget.onOpenLink != null` を送信。iOS / Android plugin はそのフラグが true のときだけ `mv.delegate = self` / `webView.onOpenLinkListener = this` を立てる。null 時は SDK 既定のフォールバック（iOS: SFSafariViewController, Android: CustomTabs）が機能する。
-- ⬜ **#5** iOS: PMLocalizedStrings の言語解決が `Bundle.main.preferredLocalizations` に依存。Flutter host の Info.plist に `CFBundleLocalizations` 未宣言だと日本語デバイスでも英語に flat — `iOS/platinumaps-sdk/Types/PMLocalizedStrings.swift:11`
-  - `Locale.current.languageCode` (or `Locale.preferredLanguages.first`) を先に使う方針へ。
+- ✅ **#5** iOS: PMLocalizedStrings の言語解決が `Bundle.main.preferredLocalizations` に依存。Flutter host の Info.plist に `CFBundleLocalizations` 未宣言だと日本語デバイスでも英語に flat — `iOS/platinumaps-sdk/Types/PMLocalizedStrings.swift:11`
+  - `Locale.preferredLanguages.first` を一次取得元に変更。host bundle の `CFBundleLocalizations` 宣言の有無に依存せずデバイス言語に従う。`scripts/generate-strings.py` 側も同じ Swift コードを emit するよう更新。
 - ⬜ **#6** coverImage の Dart doc / README は「iOS で表示される」と書くが実装は両プラットフォーム未配線 — `Flutter/platinumaps_flutter_sdk/lib/src/platinumaps_map_view.dart:84`
   - v0.1 は doc を「未配線、§8 #5 で再評価」へ訂正。`#21` と一括。
 - ⬜ **#7** CLAUDE.md の lifecycle / threading / "Where to make common changes" 記述が PMMapView リファクタを反映していない — `CLAUDE.md:128`
