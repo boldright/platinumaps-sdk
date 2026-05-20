@@ -175,18 +175,75 @@ After:
 `PMMainViewController` calls `present` in roughly a dozen places —
 `UIAlertController` for permission-denied dialogs,
 `SFSafariViewController` for the in-app browser,
-`UIDocumentPickerViewController` for the file chooser, and so on. A
-`UIView` cannot present view controllers directly.
+`UIDocumentPickerViewController` for the file chooser, and so on.
+`UIView` cannot present view controllers, so the refactor needs to
+route every one of these calls to a real `UIViewController`.
 
-**Resolution:** `PMMapView` finds the nearest enclosing
-`UIViewController` by walking the responder chain
-(`self.next` until a `UIViewController` is reached). Both the legacy
-`PMMainViewController` wrapper and Flutter's `FlutterViewController`
-satisfy this lookup, so existing iOS apps and Flutter hosts behave
-identically. Falling back to
-`UIApplication.shared.connectedScenes.first?.keyWindow?.rootViewController`
-is acceptable when responder-chain lookup is empty (e.g., before
-attachment), but it should never be the primary path.
+There are two sub-problems, and **the existing SDK already solves the
+harder one**:
+
+1. *Which* `UIViewController` should host the presentation?
+2. *What if* that `UIViewController` is already presenting another
+   modal (e.g., a host-app sheet, a previous permission alert, the
+   in-app browser)?
+
+For (2), `PMMainViewController` overrides `present(_:animated:)`
+([`PMMainViewController.swift:437-456`](../iOS/platinumaps-sdk/ViewControllers/PMMainViewController.swift))
+and walks `presentedViewController` to the top of the modal stack
+before forwarding the call. This avoids the "Attempt to present X on
+Y while Z is presented" warning and is the behaviour we need to
+preserve. Note this is not a hypothetical: a host-app modal can be
+sitting on top of the map while the WebView triggers a permission
+alert asynchronously.
+
+For (1), `PMMapView` walks the responder chain (`self.next` until a
+`UIViewController` is reached) to find its owning view controller.
+This is the standard UIKit pattern used by SwiftMessages, SVProgressHUD,
+and many Flutter plugins (`share_plus`, `firebase_auth`). The chain
+yields the same `UIViewController` that hosts the view in both
+deployment paths:
+
+- Legacy native-iOS path: the lookup lands on the
+  `PMMainViewController` wrapper.
+- Flutter path: the lookup lands on the `FlutterViewController`
+  hosting the `UiKitView`.
+
+The two sub-problems compose: find the owning `UIViewController`, then
+apply the existing topmost-presented walk to it. Concretely:
+
+```swift
+extension UIView {
+    /// The UIViewController on which `present(_:animated:)` should be
+    /// invoked from this view's context, accounting for any modal
+    /// chain already in flight.
+    var presentationViewController: UIViewController? {
+        var responder: UIResponder? = self
+        var owner: UIViewController?
+        while let r = responder {
+            if let vc = r as? UIViewController { owner = vc; break }
+            responder = r.next
+        }
+        guard var top = owner else { return nil }
+        while let next = top.presentedViewController { top = next }
+        return top
+    }
+}
+```
+
+This produces the same observable behaviour as the existing override —
+the same `UIViewController` ends up calling `present`, just discovered
+via the view rather than via `self` — so the refactor does not change
+the SDK's presentation semantics. The existing `PMMainViewController`
+override is removed because the logic now lives at the `PMMapView`
+layer and is applied uniformly.
+
+**Known constraint (unchanged from current SDK):** when the owning
+view controller is not yet in a window hierarchy, `UIKit` cannot
+present modally. The current SDK has the same constraint
+(`PMMainViewController` cannot present before it is in a window),
+and the SDK's presentation calls fire in response to user actions or
+sensor callbacks that necessarily occur after the view is on screen.
+No new risk is introduced.
 
 ### Backwards compatibility
 
