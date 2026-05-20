@@ -127,18 +127,37 @@ one most aligned with the existing investment.
 .
 ├── CLAUDE.md
 ├── README.md
-├── Package.swift                ← existing iOS Swift Package
-├── iOS/                         ← existing iOS SDK (refactored)
-├── Android/                     ← existing Android SDK (unchanged)
-└── Flutter/                     ← new
-    ├── README.md                ← integration guide for Flutter hosts
-    ├── DESIGN.md                ← this document
-    ├── pubspec.yaml
-    ├── lib/                     ← Dart implementation
-    ├── android/                 ← Gradle project; depends on ../Android/platinumaps-sdk via :include or local AAR
-    ├── ios/                     ← podspec / Swift Package; depends on ../Package.swift via path
-    └── example/                 ← runnable sample app
+├── Package.swift                          ← existing iOS Swift Package
+├── i18n/strings.yaml                      ← shared L10n source-of-truth
+├── scripts/generate-strings.py            ← regenerates the platform L10n files
+├── iOS/                                   ← existing iOS SDK (refactored)
+├── Android/                               ← existing Android SDK (unchanged)
+└── Flutter/                               ← new
+    ├── DESIGN.md                          ← this document
+    ├── example/                           ← runnable sample app
+    └── platinumaps_flutter_sdk/           ← the Flutter plugin itself
+        ├── README.md                      ← integration guide for Flutter hosts
+        ├── pubspec.yaml
+        ├── lib/                           ← Dart implementation
+        ├── android/                       ← Gradle project; bundles SDK sources
+        │                                    via `sourceSets` pointing at
+        │                                    `../../../Android/platinumaps-sdk/src/main`
+        └── ios/                           ← CocoaPods + SwiftPM
+            ├── platinumaps_flutter_sdk.podspec
+            └── platinumaps_flutter_sdk/   ← SwiftPM package
+                ├── Package.swift
+                └── Sources/
+                    ├── platinumaps_flutter_sdk/   ← plugin glue
+                    └── PlatinumapsSDK/            ← symlink to ../../../../../iOS/platinumaps-sdk
 ```
+
+The plugin directory has to be named `platinumaps_flutter_sdk` to
+match the pubspec `name:`; Flutter's plugin-injection step uses that
+directory basename as the SwiftPM package identity when it generates
+the host workspace's local override, and a mismatch causes Xcode to
+reject the package graph. The monorepo segment name `Flutter/` is
+kept as the parent so the existing `iOS/`, `Android/`, `Flutter/`
+naming stays consistent.
 
 The two existing Android sample-mirror directories
 (`Android/platinumaps-sdk` and `Android/sample/platinumaps-sdk`,
@@ -393,20 +412,21 @@ first release.
 
 ### Distribution
 
-In-repo development uses relative paths from `Flutter/` to the
-existing `Android/platinumaps-sdk` and root-level `Package.swift`.
-That arrangement does **not** survive `dart pub publish`: only the
-contents of `Flutter/` are uploaded, so consumers downloading the
-package from pub.dev see no `Android/` or `Package.swift` next to
-their copy.
+In-repo development uses relative paths from
+`Flutter/platinumaps_flutter_sdk/` to the existing
+`Android/platinumaps-sdk/` Kotlin sources and `iOS/platinumaps-sdk/`
+Swift sources. That arrangement does **not** survive `dart pub
+publish`: only the contents of `Flutter/platinumaps_flutter_sdk/`
+are uploaded, so consumers downloading the package from pub.dev see
+no `Android/` or `iOS/` next to their copy.
 
 The published package therefore needs to carry the native SDK code
 itself. Three options were considered:
 
 | Option | Android | iOS | Trade-off |
 |--------|---------|-----|-----------|
-| **Bundle sources at publish time** ✅ | Copy `Android/platinumaps-sdk` Kotlin sources into `Flutter/android/src/main/kotlin/...` as part of the publish workflow | Copy the iOS Swift sources into `Flutter/ios/Classes/...` and declare them as `source_files` in the podspec | Largest published artifact; in-repo and on-pub.dev layouts diverge; publish workflow must enforce parity |
-| Bundle prebuilt artifacts | Drop `platinumaps-sdk-release.aar` into `Flutter/android/libs/` and reference it as a flat-dir Gradle dependency | Vendor a prebuilt `xcframework` and reference it from the podspec | No source on pub.dev (harder to debug for consumers); has to be rebuilt for each release |
+| **Bundle sources at publish time** ✅ | Copy `Android/platinumaps-sdk` Kotlin sources into `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/...` as part of the publish workflow | Copy the iOS Swift sources into `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/PlatinumapsSDK/` (replacing the dev-time symlink) | Largest published artifact; in-repo and on-pub.dev layouts diverge; publish workflow must enforce parity |
+| Bundle prebuilt artifacts | Drop `platinumaps-sdk-release.aar` into `android/libs/` and reference it as a flat-dir Gradle dependency | Vendor a prebuilt `xcframework` and reference it from the podspec | No source on pub.dev (harder to debug for consumers); has to be rebuilt for each release |
 | External artifact repositories | Publish the AAR to Maven Central (or a private Maven repo) and depend on it as a normal Gradle coordinate | Publish a separate CocoaPod, or rely on the existing Swift Package via a podspec that bridges to SPM | Cleanest separation; requires standing up and maintaining the publishing pipeline; ties release cadences across two artifacts |
 
 **Decision: "Bundle sources at publish time" (Option 1).** This was
@@ -420,29 +440,40 @@ described elsewhere in this document.
 
 In-repo wiring (now in place):
 
-- **Android:** `Flutter/android/build.gradle` adds
-  `../../Android/platinumaps-sdk/src/main/java` to the plugin's
-  `main.java.srcDirs` and `../../Android/platinumaps-sdk/src/main/res`
-  to `main.res.srcDirs`. The Android `namespace` is set to
+- **Android:** `Flutter/platinumaps_flutter_sdk/android/build.gradle`
+  adds `../../../Android/platinumaps-sdk/src/main/java` to the
+  plugin's `main.java.srcDirs` and
+  `../../../Android/platinumaps-sdk/src/main/res` to
+  `main.res.srcDirs`. The Android `namespace` is set to
   `jp.co.boldright.platinumaps.sdk` so the generated `R` /
   `BuildConfig` classes appear in the package the vendored sources
   expect; the Flutter plugin glue continues to live in
   `jp.co.boldright.platinumaps.flutter` (the package declared in
   `pubspec.yaml`). `buildFeatures.buildConfig` is set to `true`
   because the SDK reads `BuildConfig.DEBUG`.
-- **iOS:** the podspec already vendors `../../iOS/platinumaps-sdk/`
-  Swift sources via `s.source_files`, which is the same shape.
+- **iOS (SwiftPM):** the package at
+  `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Package.swift`
+  exposes a single target whose `Sources/PlatinumapsSDK/` is a
+  symlink to `../../../../../iOS/platinumaps-sdk/`. SwiftPM target
+  paths must stay inside the package root, hence the symlink rather
+  than an outside-the-package `path:`.
+- **iOS (CocoaPods):** the podspec at
+  `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk.podspec`
+  globs `platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/**/*.swift`
+  and `../../../iOS/platinumaps-sdk/**/*.swift` and compiles them as
+  one module. Both managers therefore read the same sources.
 
 Publish workflow (deferred to step 8, before the first pub.dev
 publish):
 
 - Copy `Android/platinumaps-sdk/src/main/java/**` →
-  `Flutter/android/src/main/kotlin/jp/co/boldright/platinumaps/sdk/`
+  `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/jp/co/boldright/platinumaps/sdk/`
 - Copy `Android/platinumaps-sdk/src/main/res/**` →
-  `Flutter/android/src/main/res/`
-- Copy `iOS/platinumaps-sdk/**` → `Flutter/ios/Classes/`
+  `Flutter/platinumaps_flutter_sdk/android/src/main/res/`
+- Replace the `Sources/PlatinumapsSDK` symlink with a real copy of
+  `iOS/platinumaps-sdk/**`
 - Drop the `srcDirs` overrides in `build.gradle` and the
-  `../../iOS/platinumaps-sdk` glob in the podspec
+  `../../../iOS/platinumaps-sdk` glob in the podspec
 - Verify byte-identity between source and copy in CI
 
 ## 6. PlatformView composition checks

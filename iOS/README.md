@@ -26,6 +26,15 @@ SDK is self-contained — its localized permission-alert strings are
 embedded in `PMLocalizedStrings.swift`, so no resource bundle needs to
 be added to the target's **Copy Bundle Resources** build phase.
 
+> **Upgrading from a pre-`PMLocalizedStrings.swift` build:** earlier
+> versions of the SDK shipped its localized strings as
+> `iOS/platinumaps-sdk/Platinumaps.bundle/`, and the integration guide
+> asked hosts to add that bundle to **Copy Bundle Resources**. The
+> bundle is no longer part of the SDK — when you pull these sources
+> in, remove the stale `Platinumaps.bundle` reference from your
+> target's build phases (and from the project tree) so the missing
+> file does not break the build.
+
 ## Folder structure
 
 ```
