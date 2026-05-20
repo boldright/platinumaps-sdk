@@ -31,49 +31,62 @@ internal class PlatinumapsPlatformView(
 
     init {
         webView.onOpenLinkListener = this
+        webView.openPlatinumaps(buildMapOptions(args))
+    }
 
-        val mapSlug = (args?.get("mapSlug") as? String).orEmpty()
-        @Suppress("UNCHECKED_CAST")
-        val rawQueryParams = args?.get("queryParams") as? Map<String, String>
-        val locale = args?.get("locale") as? String
-        // `locale` is folded into the `culture` query parameter so the
-        // Dart API reaches the Android web layer through the same path
-        // the web app already understands. The native Android SDK has
-        // no first-class `mapLocale` field today (CLAUDE.md notes that
-        // Android derives culture from Accept-Language), but the web
-        // app honours an explicit `culture=` override regardless of
-        // platform.
-        val queryParams = when {
-            locale == null -> rawQueryParams
-            rawQueryParams == null -> mapOf("culture" to locale)
-            else -> rawQueryParams + ("culture" to locale)
-        }
+    companion object {
+        /**
+         * Translates the creation arguments the Dart side sends through
+         * the platform channel into a [PmMapOptions] the native SDK
+         * understands. Exposed at companion scope (rather than buried in
+         * the `init` block) so unit tests can pin its behaviour without
+         * standing up a real [PmWebView].
+         *
+         * `locale` is folded into the `culture` query parameter so the
+         * Dart API reaches the Android web layer through the same path
+         * the web app already understands. The native Android SDK has
+         * no first-class `mapLocale` field today (CLAUDE.md notes that
+         * Android derives culture from Accept-Language), but the web
+         * app honours an explicit `culture=` override regardless of
+         * platform.
+         *
+         * `offsetBottom`, `launchUrl`, `userId`, `secretKey`,
+         * `appStoreId`, and `coverImage` are accepted by the Dart API
+         * for forward compatibility but the existing [PmMapOptions]
+         * does not have first-class fields for them on Android. The
+         * Flutter README documents the asymmetry and DESIGN.md §8 #5
+         * tracks the parity backlog.
+         */
+        internal fun buildMapOptions(args: Map<String, Any?>?): PmMapOptions {
+            val mapSlug = (args?.get("mapSlug") as? String).orEmpty()
+            @Suppress("UNCHECKED_CAST")
+            val rawQueryParams = args?.get("queryParams") as? Map<String, String>
+            val locale = args?.get("locale") as? String
+            val queryParams = when {
+                locale == null -> rawQueryParams
+                rawQueryParams == null -> mapOf("culture" to locale)
+                else -> rawQueryParams + ("culture" to locale)
+            }
 
-        @Suppress("UNCHECKED_CAST")
-        val beaconMap = args?.get("beacon") as? Map<String, Any?>
-        val beaconOptions = beaconMap?.let {
-            PmMapBeaconOptions(
-                uuid = (it["uuid"] as? String).orEmpty(),
-                minSample = (it["minSample"] as? Number)?.toInt(),
-                maxHistory = (it["maxHistory"] as? Number)?.toInt(),
-                memo = it["memo"] as? String,
+            @Suppress("UNCHECKED_CAST")
+            val beaconMap = args?.get("beacon") as? Map<String, Any?>
+            val beaconOptions = beaconMap?.let {
+                PmMapBeaconOptions(
+                    uuid = (it["uuid"] as? String).orEmpty(),
+                    minSample = (it["minSample"] as? Number)?.toInt(),
+                    maxHistory = (it["maxHistory"] as? Number)?.toInt(),
+                    memo = it["memo"] as? String,
+                )
+            }
+
+            return PmMapOptions(
+                mapPath = mapSlug,
+                queryParams = queryParams,
+                safeAreaTop = 0,
+                safeAreaBottom = 0,
+                beacon = beaconOptions,
             )
         }
-
-        // `offsetBottom`, `launchUrl`, `userId`, `secretKey`,
-        // `appStoreId`, and `coverImage` are accepted by the Dart API
-        // for forward compatibility but the existing `PmMapOptions`
-        // does not have first-class fields for them on Android. The
-        // README documents the asymmetry and DESIGN.md §8 #5 tracks
-        // the parity backlog.
-        val options = PmMapOptions(
-            mapPath = mapSlug,
-            queryParams = queryParams,
-            safeAreaTop = 0,
-            safeAreaBottom = 0,
-            beacon = beaconOptions,
-        )
-        webView.openPlatinumaps(options)
     }
 
     override fun getView(): View = webView
