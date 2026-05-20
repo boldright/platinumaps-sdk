@@ -109,6 +109,30 @@ final class PlatinumapsPlatformViewTests: XCTestCase {
         )
     }
 
+    func test_beaconExtrasAreFoldedIntoMapQuery() throws {
+        // The native iOS SDK has no first-class API for the optional
+        // beacon-tuning fields, so the plugin folds them into the
+        // URL query parameter shape the native Android SDK already
+        // uses (`beaconminsample`, `beaconmaxhistory`, `memo`).
+        let mapView = PMMapView(frame: .zero)
+        PlatinumapsPlatformView.applyCreationArguments(
+            [
+                "mapSlug": "demo",
+                "beacon": [
+                    "uuid": "01234567-89AB-CDEF-0123-456789ABCDEF",
+                    "minSample": 4,
+                    "maxHistory": 32,
+                    "memo": "demo-zone",
+                ],
+            ],
+            to: mapView
+        )
+
+        XCTAssertEqual(mapView.mapQuery["beaconminsample"], "4")
+        XCTAssertEqual(mapView.mapQuery["beaconmaxhistory"], "32")
+        XCTAssertEqual(mapView.mapQuery["memo"], "demo-zone")
+    }
+
     func test_launchUrlIsParsedAndAppliedWhenValid() throws {
         let mapView = PMMapView(frame: .zero)
         PlatinumapsPlatformView.applyCreationArguments(
@@ -134,6 +158,23 @@ final class PlatinumapsPlatformViewTests: XCTestCase {
             [
                 "mapSlug": "demo",
                 "launchUrl": "",
+            ],
+            to: mapView
+        )
+
+        XCTAssertNil(mapView.launchURL)
+    }
+
+    func test_launchUrlIsRejectedWhenSchemeIsNotAllowed() throws {
+        // The plugin mirrors the SDK's browseAllowedSchemes allowlist
+        // (http, https, tel, mailto, sms, geo) on the inbound
+        // launchUrl path so a host cannot smuggle a `javascript:`
+        // URL into the embedded WebView.
+        let mapView = PMMapView(frame: .zero)
+        PlatinumapsPlatformView.applyCreationArguments(
+            [
+                "mapSlug": "demo",
+                "launchUrl": "javascript:alert('x')",
             ],
             to: mapView
         )

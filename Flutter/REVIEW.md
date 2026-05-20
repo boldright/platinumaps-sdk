@@ -43,7 +43,8 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
   - arguments が non-Map / null / 型不正でも throw せず early return。url は `is! String` チェック、sharedCookie は `== true` 比較で false の sentinel に。
 - ✅ **#17** example の `_handleOpenLink` が `Future<void>` を返しエラーが捨てられる — `Flutter/example/lib/main.dart:32`
   - `try/catch` で wrap、`debugPrint` で stack ごとログ。
-- ⬜ **#18** 複数 PlatinumapsMapView 同時表示で permission/file chooser のルーティング衝突 — `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/jp/co/boldright/platinumaps/flutter/PlatinumapsPlatformViewFactory.kt:38` （**要仕様確認**：SDK は internal で request code を照合して unrelated view が ignore する設計だが、複数 view 同時表示の実用ケース／契約を確認したい）
+- ❌ **#18** 複数 PlatinumapsMapView 同時表示で permission/file chooser のルーティング衝突 — `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/jp/co/boldright/platinumaps/flutter/PlatinumapsPlatformViewFactory.kt:38`
+  - 受容（複数 view 同時表示は想定外。現状の broadcast パターンは単一 view 前提として正しく動く）。
 - ✅ **#19** Android plugin: queryParams の unchecked cast が型不一致でクラッシュリスク — `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/jp/co/boldright/platinumaps/flutter/PlatinumapsPlatformView.kt:62`
   - `Map<*, *>` 経由で値ごとに `as? String` を確認するパターンに置換。beacon map も同様に処理。`@Suppress("UNCHECKED_CAST")` 撤去。
 - ✅ **#20** Android plugin: factory が `activity == null` を fallback context にし、permission request が無音失敗 — `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/jp/co/boldright/platinumaps/flutter/PlatinumapsPlatformViewFactory.kt:24`
@@ -56,10 +57,12 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
   - #4 修正後、iOS は完全にフォールバック動作。Android は `browse.inapp` (non-shared) のみ CustomTabs フォールバック、`browse.app` / `map.navigate` / shared-cookie は silent drop。この差を dartdoc にプラットフォーム別箇条書きで明記。
 - ❌ **#24** iOS XCTest `test_malformedLaunchUrlIsIgnored` のコメントが事実と逆ではないか — `Flutter/example/ios/RunnerTests/RunnerTests.swift:128`
   - 受容（コメントは「URL(string:) succeeds for almost any input, but an empty string returns nil」と書いており、iOS 17+ の挙動として正しい。レビュー指摘の方が間違い）。
-- ⬜ **#25** iOS Plugin の SwiftPM library 名がハイフン (`platinumaps-flutter-sdk`) — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Package.swift:42` （**要仕様確認**：Flutter の plugin injection が動作確認されているなら変更不要、underscored 名に統一するかは設計判断）
+- ⬜ **#25** iOS Plugin の SwiftPM library 名がハイフン (`platinumaps-flutter-sdk`) — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Package.swift:42`
+  - 実機 plugin injection の動作確認後に判断。動かないようなら underscore 名へ変更。
 - ❌ **#26** iOS PMMapView の `presentationViewController` 拡張と `pushLaunchURL` の responder walk が重複 — `iOS/platinumaps-sdk/Views/PMMapView.swift:457`
   - 受容（presentationViewController は modal 最前面まで降りる、pushLaunchURL は所有 VC で止まる必要があるという意味的に異なる責務。共通ヘルパに抽出するメリットが薄い）。
-- ⬜ **#27** example アプリの DESIGN §7 全 public API デモ要件 (beacon, etc.) 未達 — `Flutter/example/lib/main.dart:46` （**要仕様確認**：beacon の placeholder uuid を入れる程度で良いか、本格的なデモ画面を作るか）
+- ✅ **#27** example アプリの DESIGN §7 全 public API デモ要件 (beacon, etc.) 未達 — `Flutter/example/lib/main.dart:46`
+  - example は最小デモに留める方針で受容。全 public API は Dart unit test (`platinumaps_map_view_test.dart`)・iOS XCTest (`RunnerTests.swift`)・Android JUnit (`PlatinumapsPlatformViewTest.kt`) で網羅済み。今回の #9 (beacon extras→mapQuery) と #49 (launchUrl scheme allowlist) も iOS XCTest を追加。
 - ✅ **#28** prepublish.py docstring のデフォルト出力先パス (`build/publish-snapshot/...`) が古い (実際は `/tmp/`) — `scripts/prepublish.py:25`
   - docstring を実際の `/tmp/platinumaps-publish-snapshot/...` に同期。
 - ❌ **#29** prepublish.py の Gradle/podspec の `_NEEDLE` 完全一致前提が脆い — `scripts/prepublish.py:136`
@@ -74,7 +77,8 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
   - クラス header に「全ての public var は performFirstAttachSetup で1回だけ消費される、attach 後の変更は no-op」を明記。
 - ✅ **#34** iOS plugin の applyCreationArguments の coverImage コメントが「opaque ImageProvider が wire 化されてない」前提だが、Dart 側は実は coverImage を送っていない (#6) — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformView.swift:31`
   - コメントを「Dart 側がそもそも creationParams に出さない」と正しく書き換え。
-- ⬜ **#35** iOS WebView の `didFinish` で `hasInitialLoadFailed` ラッチがクリアされない (pre-existing) — `iOS/platinumaps-sdk/Views/PMMapView.swift:534` （**要仕様確認**：`web.ready` 受信時にクリアするのが現仕様。`didFinish` でクリアすると `web.ready` を待たずに hung 判定を解除してしまう可能性あり）
+- ❌ **#35** iOS WebView の `didFinish` で `hasInitialLoadFailed` ラッチがクリアされない (pre-existing) — `iOS/platinumaps-sdk/Views/PMMapView.swift:534`
+  - 現仕様維持。`web.ready` 受信＝web 層が応答可能なシグナルとしてラッチをクリアする設計。`didFinish` でクリアすると、HTML はロードされたが JS が走らず web.ready 未着の hang ケースで retry が止まる懸念。
 - ❌ **#36** iOS Podspec の `s.license` の相対パスが podspec 位置から1段上を指す。動作はするが慣例的でない — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk.podspec:22`
   - 受容（`../LICENSE` は podspec から見て `Flutter/platinumaps_flutter_sdk/LICENSE` を正しく指す。in-repo / snapshot どちらでも動作）。
 - ❌ **#37** Android plugin AndroidManifest が空。SDK が要求する permission を `<uses-permission>` で宣言しないと manifest merger が機能しない — `Flutter/platinumaps_flutter_sdk/android/src/main/AndroidManifest.xml:1`
@@ -87,7 +91,8 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
   - 「Returns userId and secretKey; iOS additionally returns offsetBottom」に整理。
 - ✅ **#41** example pubspec の Dart SDK constraint (`^3.12.0`) と plugin (`^3.4.0`) が乖離 — `Flutter/example/pubspec.yaml:22`
   - example を plugin の floor (`^3.4.0`) に合わせる。
-- ⬜ **#42** flutter_lints バージョン乖離 (plugin `^4.0.0`, example `^6.0.0`) — `Flutter/platinumaps_flutter_sdk/pubspec.yaml:19` （**要仕様確認**：plugin 側を ^6.0.0 にすべきか、example 側を ^4.0.0 に下げるか。Flutter 3.22 環境での互換性）
+- ✅ **#42** flutter_lints バージョン乖離 (plugin `^4.0.0`, example `^6.0.0`) — `Flutter/platinumaps_flutter_sdk/pubspec.yaml:19`
+  - plugin を `^6.0.0` に揃え。
 - ✅ **#43** CHANGELOG: `[0.1.0]` リンク先タグが未公開、`[0.1.0] - Unreleased` 書式も不慣例 — `Flutter/platinumaps_flutter_sdk/CHANGELOG.md:66`
   - `[Unreleased]` 見出しに変更し、まだ存在しない release tag リンクを削除。release 時に `[0.1.0] - YYYY-MM-DD` + リンクを追加する形へ。
 - ✅ **#44** CHANGELOG: 「ten cases」と数字を直書きしているのが脆い — `Flutter/platinumaps_flutter_sdk/CHANGELOG.md:59`
@@ -98,7 +103,9 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
   - `topics: [map, webview, location, beacon, platinumaps]` を追加。
 - ❌ **#47** example の iOS Info.plist に `NSLocationAlwaysAndWhenInUseUsageDescription` 無し — `Flutter/example/ios/Runner/Info.plist:1`
   - 受容（SDK は `requestWhenInUseAuthorization` のみ使用、Always 権限は要求しない。Always 用 description キーは Always permission を要求するアプリのみ必須）。
-- ⬜ **#48** CI flutter-sdk-ci.yml に `flutter build apk --release` (proguard) 経路が無い — `.github/workflows/flutter-sdk-ci.yml:1` （**要仕様確認**：release/proguard ビルドを CI で検証するか。pubspec に proguard rules がない現状でも debug + RunnerTests でカバレッジは取れる）
+- ❌ **#48** CI flutter-sdk-ci.yml に `flutter build apk --release` (proguard) 経路が無い — `.github/workflows/flutter-sdk-ci.yml:1`
+  - 受容（release ビルドは CI で検証しない方針）。
 - ✅ **#49** launchUrl の Dart 文字列が iOS で `URL(string:)` を通すだけで `javascript:` 等もそのまま web へ送られる — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformView.swift:70`
   - SDK の `browseAllowedSchemes` と同じ allowlist (`http`, `https`, `tel`, `mailto`, `sms`, `geo`) を iOS plugin の `launchUrl` 解析にも適用。
-- ⬜ **#50** i18n/strings.yaml に SDK Kotlin コードから参照されない未使用エントリ複数 (alert_settings/cancel/ok/yes/no/login, button_text_cancel, splash_image_description, qr_code_reader_message, dialog_*_camera_permission) — `i18n/strings.yaml:88` （**要仕様確認**：これらは pre-existing の Android XML resources。削除して良いか、将来の UI 拡張に備えて残すか）
+- ✅ **#50** i18n/strings.yaml に SDK Kotlin コードから参照されない未使用エントリ複数 — `i18n/strings.yaml:88`
+  - 0件参照を再確認（Kotlin / XML 両方）後、11 エントリを削除（`alert_settings`, `alert_cancel`, `alert_ok`, `alert_yes`, `alert_no`, `alert_login`, `button_text_cancel`, `splash_image_description`, `qr_code_reader_message`, `dialog_title_camera_permission`, `dialog_message_camera_permission`）。`alert_cancel` は iOS の `PMDeniedCancel` とペアだったので android_key だけ外して iOS-only に。`scripts/generate-strings.py` で再生成、`diff -r` で sample mirror parity 確認。

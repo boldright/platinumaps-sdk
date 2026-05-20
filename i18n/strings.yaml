@@ -66,8 +66,8 @@ strings:
       zh-Hant: "此功能需要使用位置信息。請允許使用位置信息。"
 
   # iOS phrases the Settings-app button as a verb ("Open settings");
-  # Android uses a plain noun. Keep them as separate entries so
-  # neither platform's existing copy changes.
+  # the Android counterpart was deleted as part of the unused-string
+  # cleanup (no Kotlin / layout reference).
   - ios_key: PMDeniedOk
     translations:
       en: "Settings"
@@ -76,16 +76,7 @@ strings:
       zh-Hans: "打开设置"
       zh-Hant: "打開設定"
 
-  - android_key: alert_settings
-    translations:
-      en: "Settings"
-      ja: "設定"
-      ko: "설정"
-      zh-Hans: "设置"
-      zh-Hant: "設置"
-
   - ios_key: PMDeniedCancel
-    android_key: alert_cancel
     translations:
       en: "Cancel"
       ja: "キャンセル"
@@ -109,76 +100,8 @@ strings:
       zh-Hans: "此设备的位置信息使用已被限制，无法使用位置信息功能。"
       zh-Hant: "此設備的位置信息使用已被限制，無法使用位置信息功能。"
 
-  # ---- Android-only strings (no iOS counterpart yet) ----
-
-  - android_key: splash_image_description
-    translations:
-      en: "Launch"
-      ja: "Launch"
-      ko: "시작"
-      zh-Hans: "启动"
-      zh-Hant: "啟動"
-
-  - android_key: qr_code_reader_message
-    translations:
-      en: "Please point the camera at the QR code."
-      ja: "カメラを二次元コードに\\n向けてください。"
-      ko: "카메라를 QR 코드에 맞추세요."
-      zh-Hans: "请将相机对准二维码。"
-      zh-Hant: "請將相機對準二維碼。"
-
-  - android_key: button_text_cancel
-    translations:
-      en: "Cancel"
-      ja: "キャンセル"
-      ko: "취소"
-      zh-Hans: "取消"
-      zh-Hant: "取消"
-
-  - android_key: dialog_title_camera_permission
-    translations:
-      en: "Permission Required"
-      ja: "確認"
-      ko: "확인"
-      zh-Hans: "确认"
-      zh-Hant: "確認"
-
-  - android_key: dialog_message_camera_permission
-    translations:
-      en: "Please allow camera access to scan the QR code."
-      ja: "QRコードを読み取るにはカメラの使用を許可してください。"
-      ko: "QR 코드를 스캔하려면 카메라 사용을 허용하세요."
-      zh-Hans: "请允许使用相机以扫描二维码。"
-      zh-Hant: "請允許使用相機以掃描二維碼。"
-
-  - android_key: alert_ok
-    translations:
-      en: "OK"
-      ja: "OK"
-      ko: "확인"
-      zh-Hans: "确定"
-      zh-Hant: "確定"
-
-  - android_key: alert_yes
-    translations:
-      en: "Yes"
-      ja: "はい"
-      ko: "예"
-      zh-Hans: "是"
-      zh-Hant: "是"
-
-  - android_key: alert_no
-    translations:
-      en: "No"
-      ja: "いいえ"
-      ko: "아니요"
-      zh-Hans: "否"
-      zh-Hant: "否"
-
-  - android_key: alert_login
-    translations:
-      en: "Sign in"
-      ja: "ログイン"
-      ko: "로그인"
-      zh-Hans: "登录"
-      zh-Hant: "登錄"
+  # Android-only strings inherited from pre-existing UI features
+  # (camera-permission dialog, QR reader, etc.) used to live here.
+  # They were all unreferenced from Kotlin and from XML layouts and
+  # were dropped during cleanup; re-add an entry here when an actual
+  # consumer in `Android/platinumaps-sdk/src/main/` lands.
