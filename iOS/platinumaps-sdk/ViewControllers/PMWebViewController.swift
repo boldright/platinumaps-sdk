@@ -10,13 +10,13 @@ import WebKit
 ///
 /// The host typically presents this controller wrapped in a
 /// `UINavigationController` so the close button is visible.
-class PMWebViewController: UIViewController {
+public class PMWebViewController: UIViewController {
 
     /// URL to load when the view appears. Must be set before
     /// `viewDidLoad()`; the controller does not reload after the fact.
     public var pageUrl: URL? = nil
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
 
         view.backgroundColor = UIColor.white

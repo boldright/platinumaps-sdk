@@ -214,7 +214,7 @@ public class PMMapView: UIView {
     // MARK: Beacon Members
     /// Optional. iBeacon UUID (hyphenated) to range. When `nil` the beacon
     /// path is disabled and `beacon.*` commands resolve as no-ops.
-    var beaconUuid: String?
+    public var beaconUuid: String?
     private var useBeacon = false
     private var beaconRegion: CLBeaconRegion!
     private var beaconWatchRequestIds: [String] = []    {
@@ -1185,7 +1185,7 @@ extension PMMapView {
     /// Scheme launch) to the web layer. If the web layer is not yet ready,
     /// the URL is stashed in `launchURL` and replayed once `web.ready`
     /// arrives.
-    func pushLaunchURL(_ url: URL) {
+    public func pushLaunchURL(_ url: URL) {
         guard hasWebReady else {
             self.launchURL = url
             return

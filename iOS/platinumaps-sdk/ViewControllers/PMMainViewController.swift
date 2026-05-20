@@ -90,7 +90,7 @@ public class PMMainViewController: UIViewController {
 
     /// Optional. iBeacon UUID (hyphenated) to range. When `nil` the beacon
     /// path is disabled and `beacon.*` commands resolve as no-ops.
-    var beaconUuid: String? {
+    public var beaconUuid: String? {
         get { mapView.beaconUuid }
         set { mapView.beaconUuid = newValue }
     }
@@ -118,7 +118,7 @@ public class PMMainViewController: UIViewController {
     /// Scheme launch) to the web layer. If the web layer is not yet ready,
     /// the URL is stashed in `launchURL` and replayed once `web.ready`
     /// arrives.
-    func pushLaunchURL(_ url: URL) {
+    public func pushLaunchURL(_ url: URL) {
         mapView.pushLaunchURL(url)
     }
 }
