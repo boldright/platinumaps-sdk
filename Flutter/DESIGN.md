@@ -18,8 +18,18 @@ Flutter widgets.
 - **Customer-facing extension hooks** (custom commands, swappable
   permission UI, alternate WebView engines). Treated as future work; not
   designed for in v1.
-- **Federated plugin layout.** v1 ships as a single non-federated package
-  to keep the surface small.
+- **Federated plugin layout.** A federated Flutter plugin splits into
+  four packages — an app-facing facade, a `platform_interface`, and
+  one implementation package per platform (e.g. `_android`, `_ios`,
+  `_web`). The pattern is the right answer when third parties are
+  expected to contribute new platform implementations, or when each
+  platform needs an independent release cadence (see `url_launcher`,
+  `path_provider`). Neither applies here: the SDK targets iOS and
+  Android only, no third-party implementation is expected, and the
+  existing native SDKs in this repo are referenced by relative path,
+  not as separately-published artifacts. v1 ships as a single
+  non-federated package; a future migration to a federated layout
+  remains possible if web or desktop targets become requirements.
 - **Web / desktop targets.** Mobile only.
 
 ## 2. Approach: wrap the existing native SDKs
