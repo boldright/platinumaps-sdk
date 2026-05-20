@@ -24,20 +24,14 @@ Flutter SDK for embedding the Platinumaps web map in a Flutter app.
   s.source           = { :path => '.' }
   # Both the CocoaPods build (single module: this podspec) and the
   # SwiftPM build (`platinumaps_flutter_sdk/Package.swift`) read the
-  # same Swift sources. CocoaPods compiles them as one module, so the
-  # `import PlatinumapsSDK` lines inside the plugin glue are gated on
-  # `SWIFT_PACKAGE` and elide here.
+  # same Swift sources. The localized permission-alert strings used
+  # to live in `Platinumaps.bundle/` but are now embedded in
+  # `PMLocalizedStrings.swift` so neither build needs a resource
+  # bundle (see DESIGN §5).
   s.source_files     = [
     'platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/**/*.swift',
-    '../../iOS/platinumaps-sdk/**/*.swift',
+    '../../../iOS/platinumaps-sdk/**/*.swift',
   ]
-
-  # The native SDK accesses its localized strings via
-  # `Bundle.main.path(forResource: "Platinumaps", ofType: "bundle")`,
-  # which requires the bundle to land in the consuming app's main
-  # bundle rather than under a namespaced resource_bundles directory
-  # inside the plugin framework. `s.resources` keeps that behaviour.
-  s.resources        = ['../../iOS/platinumaps-sdk/Platinumaps.bundle']
   s.dependency 'Flutter'
   s.platform = :ios, '16.0'
 

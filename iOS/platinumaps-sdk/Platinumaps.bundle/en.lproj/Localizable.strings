@@ -1,6 +1,0 @@
-"PMDeniedTitle" = "Notice";
-"PMDeniedMessage" = "This feature requires location services. Please open the settings and allow the app to access your location.";
-"PMDeniedOk" = "Settings";
-"PMDeniedCancel" = "Cancel";
-"PMRestrictedTitle" = "Location Services Unavailable";
-"PMRestrictedMessage" = "Location services are restricted on this device, so the app cannot access your location.";

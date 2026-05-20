@@ -36,7 +36,7 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   platinumaps_flutter_sdk:
-    path: ../
+    path: ../platinumaps_flutter_sdk
 
   url_launcher: ^6.3.1
 

@@ -1,8 +1,5 @@
 import Flutter
 import UIKit
-#if SWIFT_PACKAGE
-import PlatinumapsSDK
-#endif
 
 /// Creates a `PlatinumapsPlatformView` for each `PlatinumapsMapView`
 /// widget the Dart side builds.
@@ -20,12 +17,18 @@ final class PlatinumapsPlatformViewFactory: NSObject, FlutterPlatformViewFactory
         viewIdentifier viewId: Int64,
         arguments args: Any?
     ) -> FlutterPlatformView {
-        return PlatinumapsPlatformView(
-            frame: frame,
-            viewIdentifier: viewId,
-            arguments: args as? [String: Any],
-            messenger: messenger
-        )
+        // PlatformView factories are invoked on the main thread by
+        // Flutter; assume the main-actor isolation so we can construct
+        // the MainActor-isolated `PlatinumapsPlatformView` (which in
+        // turn touches the `@MainActor` PMMapView) without hopping.
+        return MainActor.assumeIsolated {
+            PlatinumapsPlatformView(
+                frame: frame,
+                viewIdentifier: viewId,
+                arguments: args as? [String: Any],
+                messenger: messenger
+            )
+        }
     }
 
     func createArgsCodec() -> FlutterMessageCodec & NSObjectProtocol {

@@ -70,10 +70,10 @@ android {
             // single library module compiles them in. The publish
             // workflow copies these files into `src/main/kotlin/` before
             // uploading to pub.dev.
-            '../../Android/platinumaps-sdk/src/main/java',
+            '../../../Android/platinumaps-sdk/src/main/java',
         ]
         main.res.srcDirs += [
-            '../../Android/platinumaps-sdk/src/main/res',
+            '../../../Android/platinumaps-sdk/src/main/res',
         ]
     }
 }

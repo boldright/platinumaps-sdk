@@ -21,10 +21,10 @@ URL.
 
 ### Manual integration
 
-Copy the `iOS/platinumaps-sdk/` directory (including `Platinumaps.bundle/`)
-into your Xcode project. The package manifest registers the bundle as a
-processed resource; for manual integration, add it to your target's
-**Copy Bundle Resources** build phase.
+Copy the `iOS/platinumaps-sdk/` directory into your Xcode project. The
+SDK is self-contained — its localized permission-alert strings are
+embedded in `PMLocalizedStrings.swift`, so no resource bundle needs to
+be added to the target's **Copy Bundle Resources** build phase.
 
 ## Folder structure
 
@@ -32,11 +32,12 @@ processed resource; for manual integration, add it to your target's
 iOS/platinumaps-sdk
 ├── Errors/PMError.swift                          ← reserved error type
 ├── Types/PMLocale.swift                          ← `culture` enum
+├── Types/PMLocalizedStrings.swift                ← embedded permission strings
 ├── ViewControllers
 │   ├── PMMainViewController.swift                ← public entry point
 │   └── PMWebViewController.swift                 ← in-app browser
-├── Views/PMWebView.swift                         ← WKWebView (zero insets)
-└── Platinumaps.bundle/<locale>.lproj/            ← localized permission strings
+├── Views/PMMapView.swift                         ← public map view (UIView)
+└── Views/PMWebView.swift                         ← WKWebView (zero insets)
 ```
 
 ## Required `Info.plist` keys

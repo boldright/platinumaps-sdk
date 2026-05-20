@@ -1,8 +1,5 @@
 import Flutter
 import UIKit
-#if SWIFT_PACKAGE
-import PlatinumapsSDK
-#endif
 
 /// Hosts a `PMMapView` inside a Flutter PlatformView and bridges the
 /// `PMMapViewDelegate.openLink` callback through a per-instance

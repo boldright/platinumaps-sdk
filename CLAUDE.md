@@ -34,12 +34,14 @@ notifications, analytics, or auth UI. The host app supplies all of that.
 │   ├── README.md               ← iOS integration guide
 │   └── platinumaps-sdk/
 │       ├── ViewControllers/
-│       │   ├── PMMainViewController.swift   ← hosts WKWebView, command bridge
+│       │   ├── PMMainViewController.swift   ← thin UIViewController wrapper
 │       │   └── PMWebViewController.swift    ← shared-cookie in-app browser
-│       ├── Views/PMWebView.swift            ← WKWebView with zeroed insets
+│       ├── Views/
+│       │   ├── PMMapView.swift              ← UIView hosting the bridge / WebView / sensors
+│       │   └── PMWebView.swift              ← WKWebView with zeroed insets
 │       ├── Types/PMLocale.swift             ← `culture` enum
-│       ├── Errors/PMError.swift             ← reserved for future use
-│       └── Platinumaps.bundle/              ← localized permission strings
+│       ├── Types/PMLocalizedStrings.swift   ← embedded permission-alert strings
+│       └── Errors/PMError.swift             ← reserved for future use
 └── Android/
     ├── README.md                            ← Android integration guide
     ├── platinumaps-sdk-release.aar          ← prebuilt artifact
