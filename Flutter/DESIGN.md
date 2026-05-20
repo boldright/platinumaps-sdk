@@ -95,10 +95,12 @@ one most aligned with the existing investment.
 | platinumaps_flutter_sdk (this package)             |
 |                                                    |
 |   Dart: PlatinumapsMapView, options, callbacks     |
-|   ├── PlatformViewLink (Android)                   |
+|   ├── AndroidView       (Android, hybrid comp.)    |
 |   ├── UiKitView         (iOS)                      |
+|   │     ↑ creation arguments carry the full        |
+|   │       PlatinumapsMapView configuration         |
 |   └── MethodChannel: jp.co.boldright.platinumaps   |
-|         (config push, openLink callback, lifecycle)|
+|         (native → Dart: onOpenLink callback)       |
 +------------------|---------------------------------+
                    |
 +------------------v---------------------------------+
@@ -316,18 +318,38 @@ class PlatinumapsMapView extends StatelessWidget {
     this.offsetBottom = 0,
     this.coverImage,
     this.beacon,
+    this.launchUrl,
     this.onOpenLink,
   });
 
+  /// The map identifier appended to https://platinumaps.jp/maps/.
+  /// May include a sub-path (e.g. "demo/sr999"). Serialized as
+  /// `mapSlug` on iOS and `mapPath` on Android (the two native SDKs
+  /// disagree on the name; see §8).
   final String mapSlug;
+
   final Map<String, String>? queryParams;
   final PlatinumapsLocale? locale;
   final String? appStoreId;
   final String? userId;
   final String? secretKey;
   final int offsetBottom;
+
+  /// iOS-only. The existing iOS SDK draws this image on top of the
+  /// WebView until `web.ready` fires. The Android SDK has no
+  /// equivalent today; passing a value on Android is silently
+  /// ignored. See §8 for the cross-platform parity question.
   final ImageProvider? coverImage;
+
   final PlatinumapsBeaconOptions? beacon;
+
+  /// Initial deep-link URL the host captured from a Universal Link or
+  /// Custom URL Scheme. The web layer consumes it once it is ready.
+  /// Runtime pushes (the equivalent of iOS `pushLaunchURL`) are not
+  /// supported in v1; rebuild the widget with a new `launchUrl` to
+  /// retrigger.
+  final Uri? launchUrl;
+
   final void Function(Uri url, {required bool sharedCookie})? onOpenLink;
 }
 
@@ -344,20 +366,53 @@ class PlatinumapsBeaconOptions {
   final String? memo;
 }
 
-enum PlatinumapsLocale { ja, en, zhHans, zhHant, ko }
+/// Wire values match the `culture` query parameter the web app expects.
+/// Kept in sync with iOS `PMLocale` (see iOS/platinumaps-sdk/Types/PMLocale.swift).
+enum PlatinumapsLocale {
+  ja,    // "ja"
+  en,    // "en"
+  zhHans, // "zh-cn"
+  zhHant, // "zh-tw"
+  ko,    // "ko"
+  fr,    // "fr"
+  es,    // "es"
+  vi,    // "vi"
+  id,    // "id"
+  my,    // "my"
+  th,    // "th"
+}
 ```
 
 `onOpenLink` mirrors `PMMainViewControllerDelegate.openLink`. Other
 customer-facing hooks are deliberately omitted (see Non-goals §1).
+The iOS `isWebViewInspectable` flag is intentionally not surfaced in
+v1; Android already gates the WebView inspector on `BuildConfig.DEBUG`
+automatically, and uniform debug-only behaviour is acceptable for the
+first release.
 
 ### Distribution
 
-Both halves of the plugin reference the existing native SDKs by
-relative path inside this repository — Android via Gradle
-`includeBuild` (or a direct `:project` dependency), iOS via the
-local `Package.swift`. Consumers install the plugin from pub.dev; the
-native SDKs travel with the package and there is no separate Maven /
-SPM publish step to coordinate.
+In-repo development uses relative paths from `Flutter/` to the
+existing `Android/platinumaps-sdk` and root-level `Package.swift`.
+That arrangement does **not** survive `dart pub publish`: only the
+contents of `Flutter/` are uploaded, so consumers downloading the
+package from pub.dev see no `Android/` or `Package.swift` next to
+their copy.
+
+The published package therefore needs to carry the native SDK code
+itself. Three options are on the table, none yet selected:
+
+| Option | Android | iOS | Trade-off |
+|--------|---------|-----|-----------|
+| **Bundle sources at publish time** | Copy `Android/platinumaps-sdk` Kotlin sources into `Flutter/android/src/main/kotlin/...` as part of the publish workflow | Copy the iOS Swift sources into `Flutter/ios/Classes/...` and declare them as `source_files` in the podspec | Largest published artifact; in-repo and on-pub.dev layouts diverge; publish workflow must enforce parity |
+| **Bundle prebuilt artifacts** | Drop `platinumaps-sdk-release.aar` into `Flutter/android/libs/` and reference it as a flat-dir Gradle dependency | Vendor a prebuilt `xcframework` and reference it from the podspec | No source on pub.dev (harder to debug for consumers); has to be rebuilt for each release |
+| **External artifact repositories** | Publish the AAR to Maven Central (or a private Maven repo) and depend on it as a normal Gradle coordinate | Publish a separate CocoaPod, or rely on the existing Swift Package via a podspec that bridges to SPM | Cleanest separation; requires standing up and maintaining the publishing pipeline; ties release cadences across two artifacts |
+
+Whatever option is chosen, the in-repo development experience is
+preserved: developers continue to edit `Android/platinumaps-sdk` and
+`iOS/platinumaps-sdk` directly, and the publish workflow handles the
+translation to pub.dev's shape. The decision is tracked as an open
+question (§8).
 
 ## 6. PlatformView composition checks
 
@@ -420,8 +475,11 @@ host for `integration_test`. It must:
 
 - `flutter analyze` and `dart format --output=none
   --set-exit-if-changed` must pass with zero warnings on every PR.
-- A `pana` run is part of CI; the target is the top tier (130/140 at
-  the time of writing).
+- A `pana` run is part of CI. The target is the highest pub.dev tier
+  for each scoring category that pana exposes (documentation,
+  platform support, conventions, static analysis, dependencies,
+  support). Numerical caps shift with pana releases; we track the
+  category-level result rather than an absolute score.
 - CI matrix: Flutter stable + current beta; iOS 16 and the current
   iOS release; Android API 24 (minimum supported) and the current
   stable API. Adding a new minimum-supported version triggers a
@@ -481,18 +539,55 @@ introduce breaking changes with a clear CHANGELOG entry.
    historically ship as podspecs. Confirm whether bundling a podspec
    that re-exports the existing Swift Package is acceptable, or
    whether we need a podspec that vendors the sources directly.
+4. **Native SDK packaging for pub.dev.** Pick one of the three
+   options enumerated in §5 *Distribution* (source bundling, prebuilt
+   artifact vendoring, external artifact repositories). The choice
+   shapes the publish workflow and the consumer's `flutter pub get`
+   footprint.
+5. **Cover image parity.** Decide whether to add Android coverage
+   for `coverImage` in the existing Android SDK, or freeze
+   `PlatinumapsMapView.coverImage` as iOS-only in the Dart API and
+   document the asymmetry.
+6. **Naming alignment between iOS and Android.** The native SDKs
+   disagree on field names — iOS `mapSlug` / Android `mapPath`, iOS
+   `mapQuery` / Android `queryParams`. The Dart API picks one of each
+   (`mapSlug`, `queryParams`) and the plugin glue translates. Decide
+   whether to also rename in the native SDKs to converge, or to leave
+   the divergence in place forever.
+7. **`PlatinumapsLocale` wire format.** The enum values map to web-app
+   `culture` strings (`"ja"`, `"zh-cn"`, …). Confirm Kotlin and Swift
+   serialize identically, including the hyphenated forms, when the
+   Dart enum is sent through the platform channel.
+8. **Permission acquisition responsibility.** The existing iOS and
+   Android SDKs trigger system permission prompts themselves
+   (`CLLocationManager`, `ActivityCompat.requestPermissions`).
+   Confirm the Flutter wrapper inherits this behaviour as-is and that
+   the host only needs to declare `NSLocationWhenInUseUsageDescription`
+   / `ACCESS_FINE_LOCATION` etc. in its `Info.plist` /
+   `AndroidManifest.xml`, with no `permission_handler` dependency.
+9. **`isWebViewInspectable` exposure.** The iOS SDK has a public
+   opt-in for the WebKit Inspector. v1 omits it from the Dart API on
+   the assumption that debug-only behaviour (Android already gates on
+   `BuildConfig.DEBUG`) is sufficient. Reopen if customers ask for
+   release-build debugging.
 
 ## 9. Roadmap
 
-| Step | Description | Gate |
-|------|-------------|------|
-| 1 | Refactor iOS SDK: extract `PMMapView`, shrink `PMMainViewController` to a forwarding wrapper | Existing iOS sample integration passes a manual smoke test against unchanged `iOS/README.md` instructions |
-| 2 | Create `Flutter/` directory, plugin scaffolding, Dart API skeleton, native plugin glue (both platforms) | Plugin builds; example app launches an empty `PlatinumapsMapView` |
-| 3 | Wire configuration, cover image, `onOpenLink` callback | Example app loads a real map slug end-to-end on both platforms |
-| 4 | Activity lifecycle forwarding (Android) and `ActivityAware` plumbing | Background / foreground / destroy cycle verified |
-| 5 | PlatformView composition checks (§6) and `Flutter/README.md` | All three cases documented with working snippets |
-| 6 | Test suite: Dart unit tests + native plugin-glue tests + `integration_test` driven from the example app | Tests green on CI matrix (§7) |
-| 7 | Static analysis + dartdoc + `pana` pass | Zero analyzer warnings; `pana` at target tier |
-| 8 | Release readiness checklist (§7) | All checklist items satisfied; first pub.dev publish |
+| Step | Description | Gate | Parallelizable with |
+|------|-------------|------|---------------------|
+| 0 | Design review of this document; open questions in §8 closed or explicitly deferred | Sign-off recorded in the reviewing thread | — |
+| 1a | Refactor iOS SDK: extract `PMMapView`, shrink `PMMainViewController` to a forwarding wrapper | Existing iOS sample integration passes a manual smoke test against unchanged `iOS/README.md` instructions | 1b |
+| 1b | Android side of plugin scaffolding (`Flutter/android/` Gradle project, `PlatformViewFactory` wrapping `PmWebView`, Dart skeleton) | Plugin builds; example app launches an empty `PlatinumapsMapView` on Android | 1a |
+| 2 | iOS side of plugin scaffolding wired to the refactored `PMMapView` | Example app launches an empty `PlatinumapsMapView` on iOS | — (depends on 1a) |
+| 3 | Wire configuration, cover image, `onOpenLink` callback through to both platforms | Example app loads a real map slug end-to-end on both platforms | — |
+| 4 | Activity lifecycle forwarding (Android) and `ActivityAware` plumbing | Background / foreground / destroy cycle verified | 5 |
+| 5 | PlatformView composition checks (§6) and `Flutter/README.md` | All three cases documented with working snippets | 4 |
+| 6 | Test suite: Dart unit tests + native plugin-glue tests + `integration_test` driven from the example app | Tests green on CI matrix (§7) | — |
+| 7 | Static analysis + dartdoc + `pana` pass | Zero analyzer warnings; `pana` category targets met (§7) | — |
+| 8 | Release readiness checklist (§7) | All checklist items satisfied; first pub.dev publish | — |
 
-Implementation does not start until this document has been reviewed.
+Step 0 is a hard gate: implementation does not start until the design
+review has signed off and the §8 open questions have been resolved or
+explicitly deferred. After step 0, the Android plugin scaffold (1b)
+can run in parallel with the iOS refactor (1a), and steps 4 and 5 can
+overlap.
