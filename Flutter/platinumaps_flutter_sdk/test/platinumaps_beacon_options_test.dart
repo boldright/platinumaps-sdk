@@ -6,12 +6,12 @@ void main() {
     const sampleUuid = '01234567-89AB-CDEF-0123-456789ABCDEF';
 
     test('emits only `uuid` when no optional fields are set', () {
-      final options = PlatinumapsBeaconOptions(uuid: sampleUuid);
+      const options = PlatinumapsBeaconOptions(uuid: sampleUuid);
       expect(options.toMap(), {'uuid': sampleUuid});
     });
 
     test('emits every field when all are set', () {
-      final options = PlatinumapsBeaconOptions(
+      const options = PlatinumapsBeaconOptions(
         uuid: sampleUuid,
         minSample: 4,
         maxHistory: 32,
@@ -27,7 +27,7 @@ void main() {
 
     test('omits null optional fields rather than emitting an explicit null',
         () {
-      final options = PlatinumapsBeaconOptions(
+      const options = PlatinumapsBeaconOptions(
         uuid: sampleUuid,
         minSample: 3,
         // maxHistory and memo intentionally left null

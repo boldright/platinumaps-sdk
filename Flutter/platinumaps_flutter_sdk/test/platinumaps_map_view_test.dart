@@ -23,7 +23,7 @@ void main() {
     });
 
     test('propagates every constructor argument', () {
-      final beacon = PlatinumapsBeaconOptions(
+      const beacon = PlatinumapsBeaconOptions(
         uuid: '01234567-89AB-CDEF-0123-456789ABCDEF',
         minSample: 4,
         maxHistory: 32,
@@ -67,11 +67,10 @@ void main() {
       // verifies the callback is invokable for whitelisted schemes.
       Uri? lastUrl;
       bool? lastShared;
-      final PlatinumapsOpenLinkCallback callback =
-          (url, {required sharedCookie}) {
+      void callback(Uri url, {required bool sharedCookie}) {
         lastUrl = url;
         lastShared = sharedCookie;
-      };
+      }
 
       callback(Uri.parse('https://example.com'), sharedCookie: false);
       expect(lastUrl, Uri.parse('https://example.com'));

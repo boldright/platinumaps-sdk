@@ -7,7 +7,8 @@ plugin references those via:
 
   - `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/`
     `Sources/PlatinumapsSDK` (symlink → `../../../../../iOS/platinumaps-sdk/`)
-  - `Flutter/platinumaps_flutter_sdk/example` (symlink → `../example`)
+  - `Flutter/example/` (sibling of the plugin — pub.dev needs the
+    example physically inside the plugin)
   - `Flutter/platinumaps_flutter_sdk/android/build.gradle` (Gradle
     `sourceSets` srcDirs entries pointing at
     `../../../Android/platinumaps-sdk/...`)
@@ -134,6 +135,20 @@ def copy_android_sdk_sources(snapshot: Path) -> None:
     archive_subtree(ANDROID_SDK_RES, snapshot / "android/src/main/res")
 
 
+def copy_example(snapshot: Path) -> None:
+    """Copy the sibling `Flutter/example/` directory into the snapshot.
+
+    In-repo the example sits next to the plugin (so `flutter pub get`
+    inside the plugin does not try to treat it as a pub workspace
+    member and fail to resolve its `path: ../platinumaps_flutter_sdk`
+    dependency). At publish time pana expects to find an `example/`
+    directory inside the published package, so we drop a real copy of
+    it in here. The `rewrite_example_pubspec` step that runs next
+    rewrites the example's `path:` dependency for the copy's new
+    location."""
+    archive_subtree("Flutter/example", snapshot / "example")
+
+
 _BUILD_GRADLE_NEEDLE = """    sourceSets {
         main.java.srcDirs += [
             'src/main/kotlin',
@@ -211,8 +226,8 @@ def rewrite_example_pubspec(snapshot: Path) -> None:
     """Rewrite `example/pubspec.yaml` so its `path:` reference resolves
     after publish. In-repo the example sits at `Flutter/example/` and
     depends on `../platinumaps_flutter_sdk`. The publish snapshot
-    folds the example into the plugin (via the symlink at
-    `Flutter/platinumaps_flutter_sdk/example`), so the example's
+    folds the example into the plugin (under
+    `Flutter/platinumaps_flutter_sdk/example/`), so the example's
     pubspec needs `path: ../` to reach the plugin root. Without this
     rewrite a consumer running `flutter pub get` inside the bundled
     example would chase a `../platinumaps_flutter_sdk/` path that
@@ -268,6 +283,7 @@ def main() -> int:
     archive_subtree(PLUGIN_REL, snapshot)
     materialize_symlinks(snapshot, PLUGIN_REL)
     copy_android_sdk_sources(snapshot)
+    copy_example(snapshot)
     rewrite_build_gradle(snapshot)
     rewrite_podspec(snapshot)
     rewrite_example_pubspec(snapshot)
