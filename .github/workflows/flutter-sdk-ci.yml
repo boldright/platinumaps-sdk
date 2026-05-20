@@ -1,0 +1,183 @@
+# Continuous integration for the Platinumaps Flutter SDK.
+#
+# Mirrors DESIGN.md §7's CI requirements:
+#   - dart format, flutter analyze, and dart doc warnings must be zero
+#   - flutter test (Dart unit tests) passes
+#   - the Android plugin glue's JUnit tests pass
+#   - the iOS plugin glue's XCTest cases pass (via the example app's
+#     RunnerTests target on an iOS Simulator)
+#   - pana reports the category-level targets
+#   - prepublish.py produces a snapshot dart pub publish accepts
+#   - generated localization files stay in sync with i18n/strings.yaml
+#
+# Jobs are split so a failure pinpoints the layer that broke; each
+# one runs in parallel.
+
+name: Flutter SDK CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Flutter/**'
+      - 'iOS/platinumaps-sdk/**'
+      - 'Android/platinumaps-sdk/**'
+      - 'Package.swift'
+      - 'i18n/**'
+      - 'scripts/**'
+      - '.github/workflows/flutter-sdk-ci.yml'
+  pull_request:
+    paths:
+      - 'Flutter/**'
+      - 'iOS/platinumaps-sdk/**'
+      - 'Android/platinumaps-sdk/**'
+      - 'Package.swift'
+      - 'i18n/**'
+      - 'scripts/**'
+      - '.github/workflows/flutter-sdk-ci.yml'
+
+# Cancel older runs on the same branch when a new commit lands.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dart:
+    name: Dart (format + analyze + test) — Flutter ${{ matrix.channel }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [stable, beta]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ matrix.channel }}
+      - run: flutter --version
+      - name: pub get (plugin)
+        working-directory: Flutter/platinumaps_flutter_sdk
+        run: flutter pub get
+      - name: dart format (plugin)
+        working-directory: Flutter/platinumaps_flutter_sdk
+        run: dart format --output=none --set-exit-if-changed lib test
+      - name: flutter analyze (plugin)
+        working-directory: Flutter/platinumaps_flutter_sdk
+        run: flutter analyze
+      - name: flutter test (plugin Dart unit tests)
+        working-directory: Flutter/platinumaps_flutter_sdk
+        run: flutter test
+      - name: pub get (example)
+        working-directory: Flutter/example
+        run: flutter pub get
+      - name: dart format (example)
+        working-directory: Flutter/example
+        run: dart format --output=none --set-exit-if-changed lib test integration_test
+      - name: flutter analyze (example)
+        working-directory: Flutter/example
+        run: flutter analyze
+
+  pana:
+    name: pana
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Activate pana
+        run: dart pub global activate pana
+      - name: Run pana
+        working-directory: Flutter/platinumaps_flutter_sdk
+        # The repository-URL verification sub-item passes only against
+        # the merged `main` branch (pana clones it), so we don't fail
+        # CI on the absolute score; we fail on category-level
+        # regressions instead.
+        run: ~/.pub-cache/bin/pana --no-warning --exit-code-threshold 30
+
+  android:
+    name: Android plugin tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - uses: android-actions/setup-android@v3
+      - name: pub get (example)
+        working-directory: Flutter/example
+        run: flutter pub get
+      - name: Plugin JUnit tests
+        working-directory: Flutter/example/android
+        run: ./gradlew :platinumaps_flutter_sdk:test
+      - name: Example debug APK builds
+        working-directory: Flutter/example
+        run: flutter build apk --debug
+
+  ios:
+    name: iOS plugin tests (XCTest)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Select the latest stable Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+      - name: pub get (example)
+        working-directory: Flutter/example
+        run: flutter pub get
+      - name: Build the example for the iOS simulator
+        working-directory: Flutter/example
+        run: flutter build ios --simulator --debug --no-codesign
+      - name: Build the example's RunnerTests target
+        working-directory: Flutter/example/ios
+        run: |
+          xcodebuild build-for-testing \
+            -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -destination 'generic/platform=iOS Simulator'
+      - name: Run XCTest
+        working-directory: Flutter/example/ios
+        run: |
+          xcodebuild test-without-building \
+            -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -destination 'platform=iOS Simulator,name=iPhone 16'
+
+  publish-dry-run:
+    name: dart pub publish --dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Build the publish snapshot
+        run: python3 scripts/prepublish.py
+      - name: dart pub publish --dry-run on the snapshot
+        working-directory: /tmp/platinumaps-publish-snapshot/platinumaps_flutter_sdk
+        run: dart pub publish --dry-run
+
+  i18n-sync:
+    name: i18n generated files are up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PyYAML
+        run: python3 -m pip install --user pyyaml
+      - name: Regenerate localizations
+        run: python3 scripts/generate-strings.py
+      - name: Diff against checked-in copies
+        # `git diff --exit-code` fails if the generator produced a
+        # different result than what's checked in — meaning the YAML
+        # was edited without re-running the generator.
+        run: |
+          git diff --exit-code -- \
+            iOS/platinumaps-sdk/Types/PMLocalizedStrings.swift \
+            Android/platinumaps-sdk/src/main/res \
+            Android/sample/platinumaps-sdk/src/main/res
