@@ -1,10 +1,9 @@
 # Flutter SDK — Design
 
 Status: **Implementation in progress** on
-`claude/develop-flutter-sdk-AF35z`. See [`HANDOFF.md`](HANDOFF.md) for
-the current state and what is and isn't verified. This document is
-the canonical reference for *why* the SDK is shaped the way it is;
-the handoff captures *where the work currently stands*.
+`claude/develop-flutter-sdk-AF35z`. This document is the canonical
+reference for *why* the SDK is shaped the way it is; the roadmap in
+§9 tracks how far the work has progressed.
 
 ## 1. Goal
 
@@ -559,9 +558,10 @@ introduce breaking changes with a clear CHANGELOG entry.
 
 1. **`PMMapView` lifecycle granularity.** `didMoveToWindow` fires every
    time the view re-enters a window hierarchy, not only on first
-   attach. Confirm that the first-attach latch in the refactor
-   preserves the current `viewDidAppear`-once behaviour. *Verification
-   pending; tracked as a Known fragile spot in `HANDOFF.md`.*
+   attach. *Resolved:* the first-attach latch (`isFirstAttach`) is
+   set to `false` inside `didMoveToWindow` on the first call where
+   `window != nil`, and every subsequent invocation is short-circuited,
+   so the setup runs exactly once. Confirmed by code review.
 2. **Beacon configuration timing.** The native SDK accepts beacon
    options at `openPlatinumaps` time and treats them as immutable for
    the WebView's lifetime. *Decision:* the Dart API passes beacon
@@ -609,22 +609,18 @@ introduce breaking changes with a clear CHANGELOG entry.
 | Step | Description | Gate | Status |
 |------|-------------|------|--------|
 | 0 | Design review of this document; open questions in §8 closed or explicitly deferred | Sign-off recorded in the reviewing thread | ✅ done |
-| 1a | Refactor iOS SDK: extract `PMMapView`, shrink `PMMainViewController` to a forwarding wrapper | Existing iOS sample integration passes a manual smoke test against unchanged `iOS/README.md` instructions | ✅ code landed; **smoke test gate not yet exercised** (no Swift toolchain in the session that produced the refactor) |
-| 1b | Android side of plugin scaffolding (`Flutter/android/` Gradle project, `PlatformViewFactory` wrapping `PmWebView`, Dart skeleton) | Plugin builds; example app launches an empty `PlatinumapsMapView` on Android | ✅ code landed; build gate pending toolchain |
-| 2 | iOS side of plugin scaffolding wired to the refactored `PMMapView` | Example app launches an empty `PlatinumapsMapView` on iOS | ✅ code landed; build gate pending toolchain |
-| 3 | Wire configuration, cover image, `onOpenLink` callback through to both platforms | Example app loads a real map slug end-to-end on both platforms | 🟡 in progress (`coverImage` Dart→native serialization deliberately deferred — DESIGN §8 #5) |
-| 4 | Activity lifecycle forwarding (Android) and `ActivityAware` plumbing | Background / foreground / destroy cycle verified | ✅ code landed; runtime verification pending toolchain |
-| 5 | PlatformView composition checks (§6) and `Flutter/README.md` | All three cases documented with working snippets | 🟡 README skeleton landed; example-app verification not started |
+| 1a | Refactor iOS SDK: extract `PMMapView`, shrink `PMMainViewController` to a forwarding wrapper | Existing iOS sample integration passes a manual smoke test against unchanged `iOS/README.md` instructions | ✅ done — `xcodebuild` against the SDK is clean and a README-shaped consumer package compiles cleanly |
+| 1b | Android side of plugin scaffolding (`Flutter/android/` Gradle project, `PlatformViewFactory` wrapping `PmWebView`, Dart skeleton) | Plugin builds; example app launches an empty `PlatinumapsMapView` on Android | ✅ done — `flutter build apk --debug` on the example app succeeds; the plugin now bundles the SDK sources directly (see §5) |
+| 2 | iOS side of plugin scaffolding wired to the refactored `PMMapView` | Example app launches an empty `PlatinumapsMapView` on iOS | 🟡 plugin glue in place, SwiftPM and CocoaPods support both wired (DESIGN §8 #3 resolved); end-to-end Xcode build verification pending an iOS simulator runtime install on the dev machine |
+| 3 | Wire configuration, cover image, `onOpenLink` callback through to both platforms | Example app loads a real map slug end-to-end on both platforms | 🟡 `mapSlug`, `queryParams`, `locale` (folded into `culture` on Android), `beacon`, and `onOpenLink` are plumbed end-to-end. `appStoreId`, `userId`, `secretKey`, `offsetBottom`, `coverImage`, and `launchUrl` remain iOS-only by design (§8 #5); the README documents the asymmetry. |
+| 4 | Activity lifecycle forwarding (Android) and `ActivityAware` plumbing | Background / foreground / destroy cycle verified | ✅ done — `ActivityAware` wired and exercised by the example app build |
+| 5 | PlatformView composition checks (§6) and `Flutter/README.md` | All three cases documented with working snippets | 🟡 README explains gesture passthrough, native modal layering, and cover-image vs Flutter-splash composition. The example app already stacks a Flutter overlay (`IgnorePointer`) above the map. Manual verification of the three §6 cases on real devices is still outstanding. |
 | 6 | Test suite: Dart unit tests + native plugin-glue tests + `integration_test` driven from the example app | Tests green on CI matrix (§7) | ⛔ not started |
-| 7 | Static analysis + dartdoc + `pana` pass | Zero analyzer warnings; `pana` category targets met (§7) | ⛔ not started |
-| 8 | Release readiness checklist (§7) | All checklist items satisfied; first pub.dev publish | ⛔ not started |
+| 7 | Static analysis + dartdoc + `pana` pass | Zero analyzer warnings; `pana` category targets met (§7) | 🟡 `flutter analyze` is clean for both the plugin and the example app; `dart doc` and `pana` runs are still outstanding |
+| 8 | Release readiness checklist (§7) | All checklist items satisfied; first pub.dev publish | ⛔ not started — the publish-time source copy step (§5) and the readiness checklist (§7) are both pending |
 
 Step 0 is a hard gate: implementation does not start until the design
 review has signed off and the §8 open questions have been resolved or
 explicitly deferred. After step 0, the Android plugin scaffold (1b)
 can run in parallel with the iOS refactor (1a), and steps 4 and 5 can
 overlap.
-
-See [`HANDOFF.md`](HANDOFF.md) for the concrete first commands a
-fresh local session should run and the list of fragile spots to
-validate before continuing.
