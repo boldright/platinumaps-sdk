@@ -10,8 +10,8 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
   - Plugin に `DefaultLifecycleObserver` を実装。`FlutterLifecycleAdapter.getActivityLifecycle(binding)` から Activity の `Lifecycle` を取得し、onResume/onPause/onDestroy を全ての active PlatformView に forward。PlatformView 側からは `onFlutterViewAttached/Detached` を撤去し、代わりに `activityResume/Pause/Destroy()` を公開。
 - ✅ **#2** Android: result listener が常に true を返し、他プラグインの permission/activity result を奪う — `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/jp/co/boldright/platinumaps/flutter/PlatinumapsFlutterPlugin.kt:28`
   - SDK の request code (`PERMISSION_REQUEST_CODE`/`REQUEST_CODE_PERMISSIONS_LOCATION`/`REQUEST_CODE_PERMISSIONS_BEACON`/`FILE_CHOOSER_REQUEST_CODE`) を companion object に集約し、listener はその集合に含まれる場合のみ `true` を返すよう変更。
-- ⬜ **#3** iOS: mapSlug='' (Dart 的に valid) でも fatalError 即死 — `iOS/platinumaps-sdk/Views/PMMapView.swift:290`
-  - 空文字を warn + early return に格下げ、もしくは Dart API 側で空文字を弾く。
+- ✅ **#3** iOS: mapSlug='' (Dart 的に valid) でも fatalError 即死 — `iOS/platinumaps-sdk/Views/PMMapView.swift:290`
+  - `fatalError` を撤去し、空 mapSlug を `os.Logger` 経由の `.error` ログ + early return に変更。force-unwrap (`mapSlug!`) も guard で shadow した non-optional に置換。
 - ⬜ **#4** iOS: Flutter plugin が delegate を常時セットし、Dart 側 onOpenLink=null の時にリンクが silent drop（ネイティブ既定の SFSafariViewController も発動しない） — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformView.swift:27`
   - Dart の `onOpenLink` 設定有無を creation args で送り、未設定なら delegate を立てない。`#23` と一括対応。
 - ⬜ **#5** iOS: PMLocalizedStrings の言語解決が `Bundle.main.preferredLocalizations` に依存。Flutter host の Info.plist に `CFBundleLocalizations` 未宣言だと日本語デバイスでも英語に flat — `iOS/platinumaps-sdk/Types/PMLocalizedStrings.swift:11`

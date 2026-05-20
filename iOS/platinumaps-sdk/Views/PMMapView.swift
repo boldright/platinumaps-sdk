@@ -276,8 +276,15 @@ public class PMMapView: UIView {
     /// `viewDidAppear` (URL build, initial load, foreground/background
     /// observer registration).
     private func performFirstAttachSetup() {
-        if mapSlug?.isEmpty != false {
-            fatalError("MapSlug is empty")
+        // An empty or nil `mapSlug` cannot resolve to a valid map URL.
+        // Bail out with a logged warning instead of crashing the host
+        // app: Dart consumers can construct a `PlatinumapsMapView` with
+        // `mapSlug: ''` because the Dart type system has no non-empty
+        // string constraint, and a soft-failure here is the friendlier
+        // contract.
+        guard let mapSlug = mapSlug, !mapSlug.isEmpty else {
+            Self.retryLog.error("PMMapView: mapSlug is empty; the view will not load any map.")
+            return
         }
 
         let webViewConfig = WKWebViewConfiguration()
@@ -319,7 +326,7 @@ public class PMMapView: UIView {
         locationManager.delegate = self
         initBeaconIfNeeded()
 
-        let path = "/maps/\(mapSlug!)"
+        let path = "/maps/\(mapSlug)"
         var urlComp = URLComponents(string: "\(mapOrigin)\(path)")!
 
         var queryItems = [URLQueryItem]();
