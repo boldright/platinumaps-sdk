@@ -340,7 +340,15 @@ public class PMMapView: UIView {
         }
 
         queryItems.append(URLQueryItem(name: "native", value: "1"))
+        // If `mapLocale` is set, suppress a `culture` key in `mapQuery`
+        // so the URL does not end up with two competing `culture=…`
+        // pairs. Mirrors the Android plugin glue, which merges
+        // `locale` into `queryParams` with last-write-wins semantics.
+        let mapLocaleIsSet = mapLocale != nil
         mapQuery.forEach { item in
+            if mapLocaleIsSet && item.key == "culture" {
+                return
+            }
             queryItems.append(URLQueryItem(name: item.key, value: item.value))
         }
         // Safe-area insets are only valid after the view has been laid
@@ -470,16 +478,31 @@ extension UIView {
 // MARK: - WKUIDelegate
 extension PMMapView: WKUIDelegate {
     public func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable () -> Void) {
+        // WebKit blocks the JS thread until the completion handler
+        // fires. If we cannot present the alert (no owning view
+        // controller in the responder chain — typically because the
+        // view is not yet attached to a window) we must still call
+        // the handler immediately, otherwise the page hangs.
+        guard let presenter = presentationViewController else {
+            completionHandler()
+            return
+        }
         let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
         let okAction = UIAlertAction(title: "OK", style: .default) { (_) in
             completionHandler()
         }
         alert.addAction(okAction)
-        presentationViewController?.present(alert, animated: true, completion: nil)
+        presenter.present(alert, animated: true, completion: nil)
     }
 
     public func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable (Bool) -> Void) {
-
+        // Same hang-avoidance contract as the alert panel above: when
+        // we cannot present, resolve the prompt as "cancel" so the
+        // JS thread unblocks.
+        guard let presenter = presentationViewController else {
+            completionHandler(false)
+            return
+        }
         let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
         let okAction = UIAlertAction(title: "OK", style: .default) { (_) in
             completionHandler(true)
@@ -489,7 +512,7 @@ extension PMMapView: WKUIDelegate {
             completionHandler(false)
         }
         alert.addAction(cancelAction)
-        presentationViewController?.present(alert, animated: true, completion: nil)
+        presenter.present(alert, animated: true, completion: nil)
     }
 }
 
@@ -1324,7 +1347,7 @@ extension PMMapView {
               let beaconRegion = self.beaconRegion else {
             return
         }
-        logBeacon("fucn: didStartMonitoringFor")
+        logBeacon("func: didStartMonitoringFor")
         self.locationManager.requestState(for: beaconRegion)
     }
 

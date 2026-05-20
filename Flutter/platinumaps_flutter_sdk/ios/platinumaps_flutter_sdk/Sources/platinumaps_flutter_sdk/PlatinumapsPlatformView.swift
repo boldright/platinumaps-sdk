@@ -96,9 +96,27 @@ final class PlatinumapsPlatformView: NSObject, FlutterPlatformView, PMMapViewDel
         if let offsetBottom = args?["offsetBottom"] as? Int {
             mapView.offsetBottom = offsetBottom
         }
-        if let beacon = args?["beacon"] as? [String: Any],
-           let uuid = beacon["uuid"] as? String {
-            mapView.beaconUuid = uuid
+        if let beacon = args?["beacon"] as? [String: Any] {
+            if let uuid = beacon["uuid"] as? String {
+                mapView.beaconUuid = uuid
+            }
+            // Match the wire format the native Android SDK uses: it
+            // appends `beaconminsample` / `beaconmaxhistory` / `memo`
+            // URL query parameters during `openPlatinumaps`. iOS
+            // PMMapView has no public API for these optional fields,
+            // so fold them into `mapQuery` so the same parameters
+            // reach the web layer regardless of platform.
+            var extras = mapView.mapQuery
+            if let minSample = beacon["minSample"] as? Int {
+                extras["beaconminsample"] = String(minSample)
+            }
+            if let maxHistory = beacon["maxHistory"] as? Int {
+                extras["beaconmaxhistory"] = String(maxHistory)
+            }
+            if let memo = beacon["memo"] as? String {
+                extras["memo"] = memo
+            }
+            mapView.mapQuery = extras
         }
         if let launchUrlString = args?["launchUrl"] as? String,
            let launchUrl = URL(string: launchUrlString) {

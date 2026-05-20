@@ -23,12 +23,17 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
 
 ## Recommended (#8–#50)
 
-- ⬜ **#8** iOS: WKUIDelegate alert/confirm panel で `presentationViewController == nil` 時に completionHandler 未呼出 → WebView hang — `iOS/platinumaps-sdk/Views/PMMapView.swift:475`
-- ⬜ **#9** iOS: beacon の minSample/maxHistory/memo が無視される (Android は URL query で送る、不整合) — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformView.swift:66`
-- ⬜ **#10** iOS: locale と queryParams 両方指定で URL に `culture=` 重複 — `iOS/platinumaps-sdk/Views/PMMapView.swift:339`
-- ⬜ **#11** Flutter example の Android main/AndroidManifest.xml に `INTERNET` 欠落 (release ビルドで WebView が動かない) — `Flutter/example/android/app/src/main/AndroidManifest.xml:1`
+- ✅ **#8** iOS: WKUIDelegate alert/confirm panel で `presentationViewController == nil` 時に completionHandler 未呼出 → WebView hang — `iOS/platinumaps-sdk/Views/PMMapView.swift:475`
+  - 各 panel メソッドの先頭で `guard let presenter = presentationViewController else { completionHandler(...); return }` を入れて、prentable な VC が見つからない場合は alert は OK 相当 (`()`)、confirm は cancel 相当 (`false`) で即時 completionHandler を呼ぶ。
+- ✅ **#9** iOS: beacon の minSample/maxHistory/memo が無視される (Android は URL query で送る、不整合) — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformView.swift:66`
+  - iOS plugin で beacon["minSample"]/["maxHistory"]/["memo"] を `mapQuery` に `beaconminsample` / `beaconmaxhistory` / `memo` キーとして fold。Android SDK が `openPlatinumaps` で送る URL query パラメータと同じ wire format。
+- ✅ **#10** iOS: locale と queryParams 両方指定で URL に `culture=` 重複 — `iOS/platinumaps-sdk/Views/PMMapView.swift:339`
+  - `mapLocale` が non-nil の場合、`mapQuery` 内の `culture` キーを skip。Android plugin の last-write-wins マージと同じセマンティクス（locale 優先）。
+- ✅ **#11** Flutter example の Android main/AndroidManifest.xml に `INTERNET` 欠落 (release ビルドで WebView が動かない) — `Flutter/example/android/app/src/main/AndroidManifest.xml:1`
+  - `<uses-permission android:name="android.permission.INTERNET" />` を main manifest に追加。
 - ⬜ **#12** example の `path: ../platinumaps_flutter_sdk` は published 時に example が同梱されると壊れる — `Flutter/example/pubspec.yaml:39`
-- ⬜ **#13** iOS PMMapView.swift に typo "fucn" — `iOS/platinumaps-sdk/Views/PMMapView.swift:1320`
+- ✅ **#13** iOS PMMapView.swift に typo "fucn" — `iOS/platinumaps-sdk/Views/PMMapView.swift:1320`
+  - `func` に修正。
 - ✅ **#14** iOS plugin PlatinumapsPlatformView クラスに `@MainActor` 注釈なし — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformView.swift:7`
   - クラスに `@MainActor` 追加。
 - ✅ **#15** iOS plugin: deinit で mapView.delegate = nil していない (Android との対称性 / 安全性) — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformView.swift:7`

@@ -1,4 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required for the embedded WebView. The Flutter framework's
+         debug / profile AndroidManifest declares this so `flutter run`
+         works, but release builds compose only the main manifest,
+         where the permission has to be declared explicitly. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- Permissions the Platinumaps SDK can request at runtime,
          depending on which features the embedded map actually uses.
          Declared up front so the example app works for the full
