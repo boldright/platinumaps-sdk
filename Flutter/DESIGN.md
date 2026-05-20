@@ -372,7 +372,90 @@ expected to be blockers but each deserves an explicit check:
    explicit gesture detectors only on UI elements that need them. Call
    this out in `Flutter/README.md`.
 
-## 7. Open questions
+## 7. Verification & release criteria
+
+The SDK is considered complete when an external Flutter developer can
+install it from pub.dev, follow `Flutter/README.md`, and have a working
+embedded map in their app on both supported platforms. Reaching that
+bar requires several layers of verification beyond "the sample app
+runs".
+
+### Test pyramid
+
+| Layer | Scope | Tooling |
+|-------|-------|---------|
+| Dart unit tests (`test/`) | Pure-Dart logic: options serialization, URL building, public API contracts, callback dispatch with a mocked platform channel | `flutter test` |
+| Native plugin unit tests | The thin plugin glue layer only (PlatformViewFactory creation arguments, MethodChannel routing). Existing iOS/Android SDK modules retain their own test posture independently. | Android: JUnit / Robolectric. iOS: XCTest |
+| Integration tests (`integration_test/`) | End-to-end behaviour from the example app: WebView reaches `web.ready`, `onOpenLink` fires for whitelisted schemes, beacon configuration round-trips correctly through the bridge. | `flutter test integration_test` driven from the example app, runnable on emulators / simulators in CI and on physical devices for sensor-dependent checks |
+| Manual smoke checks | Hardware-only flows that CI cannot exercise reliably: GPS fix on a moving device, iBeacon ranging against real hardware, camera-backed file chooser. | Physical iOS + Android devices, captured in a release checklist |
+
+Test coverage is reported per pull request but **no numerical gate is
+enforced** — coverage is a signal, not the goal. The integration tests
+are the primary safety net.
+
+### Example app (`Flutter/example/`)
+
+The example app is both the user-facing reference integration and the
+host for `integration_test`. It must:
+
+- Demonstrate every public API on `PlatinumapsMapView`, including
+  `onOpenLink`, beacon configuration, cover image, and a Flutter
+  widget overlaid above the map.
+- Build for iOS and Android out of the box with `flutter run` against
+  the example directory.
+- Be the only sample integration we ship; we do not maintain separate
+  per-feature samples.
+
+### Static analysis & continuous integration
+
+- `flutter analyze` and `dart format --output=none
+  --set-exit-if-changed` must pass with zero warnings on every PR.
+- A `pana` run is part of CI; the target is the top tier (130/140 at
+  the time of writing).
+- CI matrix: Flutter stable + current beta; iOS 16 and the current
+  iOS release; Android API 24 (minimum supported) and the current
+  stable API. Adding a new minimum-supported version triggers a
+  changelog entry.
+
+### Documentation
+
+- `Flutter/README.md` — integration guide structured like the existing
+  iOS / Android READMEs (install, minimum versions, required
+  permissions, lifecycle contract, minimal usage example, FAQ).
+- Public Dart API carries dartdoc comments. `dart doc` produces clean
+  output with no broken references.
+- `CHANGELOG.md` at the package root follows the
+  [Keep a Changelog](https://keepachangelog.com) format and is updated
+  in the same PR that introduces a user-visible change.
+
+### Release readiness checklist
+
+Before the first publish, all of the following must hold:
+
+- [ ] Unit + integration test suites green on CI for the supported
+      matrix.
+- [ ] `flutter analyze` clean; `pana` score at target tier.
+- [ ] Manual smoke checks for sensor-dependent flows recorded against
+      the release candidate.
+- [ ] All public APIs documented; `dart doc` produces no warnings.
+- [ ] `Flutter/README.md` integration walkthrough has been followed
+      end-to-end by someone who did not write the SDK.
+- [ ] `CHANGELOG.md`, `pubspec.yaml` version, and the package
+      `LICENSE` are up to date.
+- [ ] The example app builds and runs on iOS and Android against the
+      release candidate.
+
+### Versioning & distribution
+
+The package follows semantic versioning. The bridge protocol's
+user-agent suffix (`Platinumaps/2.0.0`, see CLAUDE.md §Versioning) is
+**not** the package's version — the Flutter SDK's `pubspec.yaml`
+version tracks the package itself and starts at `0.1.0` while the
+public API is still considered unstable. The package is published to
+pub.dev once the readiness checklist passes; pre-1.0 versions may
+introduce breaking changes with a clear CHANGELOG entry.
+
+## 8. Open questions
 
 1. **`PMMapView` lifecycle granularity.** `didMoveToWindow` fires every
    time the view re-enters a window hierarchy, not only on first
@@ -389,15 +472,17 @@ expected to be blockers but each deserves an explicit check:
    that re-exports the existing Swift Package is acceptable, or
    whether we need a podspec that vendors the sources directly.
 
-## 8. Roadmap
+## 9. Roadmap
 
 | Step | Description | Gate |
 |------|-------------|------|
 | 1 | Refactor iOS SDK: extract `PMMapView`, shrink `PMMainViewController` to a forwarding wrapper | Existing iOS sample integration passes a manual smoke test against unchanged `iOS/README.md` instructions |
 | 2 | Create `Flutter/` directory, plugin scaffolding, Dart API skeleton, native plugin glue (both platforms) | Plugin builds; example app launches an empty `PlatinumapsMapView` |
 | 3 | Wire configuration, cover image, `onOpenLink` callback | Example app loads a real map slug end-to-end on both platforms |
-| 4 | Activity lifecycle forwarding (Android) and `ActivityAware` plumbing | Background / foreground / destroy cycle behaves identically to the existing Android sample |
-| 5 | Composition checks (§6) and `Flutter/README.md` | All three cases documented with working snippets |
-| 6 | Publish-readiness pass: `pubspec.yaml` metadata, license, example app polish | Ready for first internal pub.dev publish |
+| 4 | Activity lifecycle forwarding (Android) and `ActivityAware` plumbing | Background / foreground / destroy cycle verified |
+| 5 | PlatformView composition checks (§6) and `Flutter/README.md` | All three cases documented with working snippets |
+| 6 | Test suite: Dart unit tests + native plugin-glue tests + `integration_test` driven from the example app | Tests green on CI matrix (§7) |
+| 7 | Static analysis + dartdoc + `pana` pass | Zero analyzer warnings; `pana` at target tier |
+| 8 | Release readiness checklist (§7) | All checklist items satisfied; first pub.dev publish |
 
 Implementation does not start until this document has been reviewed.
