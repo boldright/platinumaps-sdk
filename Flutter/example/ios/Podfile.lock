@@ -1,0 +1,22 @@
+PODS:
+  - Flutter (1.0.0)
+  - platinumaps_flutter_sdk (0.1.0):
+    - Flutter
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - platinumaps_flutter_sdk (from `.symlinks/plugins/platinumaps_flutter_sdk/ios`)
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  platinumaps_flutter_sdk:
+    :path: ".symlinks/plugins/platinumaps_flutter_sdk/ios"
+
+SPEC CHECKSUMS:
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  platinumaps_flutter_sdk: 9de71d1970366100b6c760fb5c32461882691ca7
+
+PODFILE CHECKSUM: bd29822c3d5baf6b44b726f00ea3293a19339ef2
+
+COCOAPODS: 1.16.2
