@@ -1,8 +1,10 @@
 # Flutter SDK — Design
 
-Status: **Draft for review**. No implementation has begun. This document is
-the single source of truth for the planned Flutter SDK and is intended to
-be reviewed before any code lands.
+Status: **Implementation in progress** on
+`claude/develop-flutter-sdk-AF35z`. See [`HANDOFF.md`](HANDOFF.md) for
+the current state and what is and isn't verified. This document is
+the canonical reference for *why* the SDK is shaped the way it is;
+the handoff captures *where the work currently stands*.
 
 ## 1. Goal
 
@@ -573,21 +575,25 @@ introduce breaking changes with a clear CHANGELOG entry.
 
 ## 9. Roadmap
 
-| Step | Description | Gate | Parallelizable with |
-|------|-------------|------|---------------------|
-| 0 | Design review of this document; open questions in §8 closed or explicitly deferred | Sign-off recorded in the reviewing thread | — |
-| 1a | Refactor iOS SDK: extract `PMMapView`, shrink `PMMainViewController` to a forwarding wrapper | Existing iOS sample integration passes a manual smoke test against unchanged `iOS/README.md` instructions | 1b |
-| 1b | Android side of plugin scaffolding (`Flutter/android/` Gradle project, `PlatformViewFactory` wrapping `PmWebView`, Dart skeleton) | Plugin builds; example app launches an empty `PlatinumapsMapView` on Android | 1a |
-| 2 | iOS side of plugin scaffolding wired to the refactored `PMMapView` | Example app launches an empty `PlatinumapsMapView` on iOS | — (depends on 1a) |
-| 3 | Wire configuration, cover image, `onOpenLink` callback through to both platforms | Example app loads a real map slug end-to-end on both platforms | — |
-| 4 | Activity lifecycle forwarding (Android) and `ActivityAware` plumbing | Background / foreground / destroy cycle verified | 5 |
-| 5 | PlatformView composition checks (§6) and `Flutter/README.md` | All three cases documented with working snippets | 4 |
-| 6 | Test suite: Dart unit tests + native plugin-glue tests + `integration_test` driven from the example app | Tests green on CI matrix (§7) | — |
-| 7 | Static analysis + dartdoc + `pana` pass | Zero analyzer warnings; `pana` category targets met (§7) | — |
-| 8 | Release readiness checklist (§7) | All checklist items satisfied; first pub.dev publish | — |
+| Step | Description | Gate | Status |
+|------|-------------|------|--------|
+| 0 | Design review of this document; open questions in §8 closed or explicitly deferred | Sign-off recorded in the reviewing thread | ✅ done |
+| 1a | Refactor iOS SDK: extract `PMMapView`, shrink `PMMainViewController` to a forwarding wrapper | Existing iOS sample integration passes a manual smoke test against unchanged `iOS/README.md` instructions | ✅ code landed; **smoke test gate not yet exercised** (no Swift toolchain in the session that produced the refactor) |
+| 1b | Android side of plugin scaffolding (`Flutter/android/` Gradle project, `PlatformViewFactory` wrapping `PmWebView`, Dart skeleton) | Plugin builds; example app launches an empty `PlatinumapsMapView` on Android | ✅ code landed; build gate pending toolchain |
+| 2 | iOS side of plugin scaffolding wired to the refactored `PMMapView` | Example app launches an empty `PlatinumapsMapView` on iOS | ✅ code landed; build gate pending toolchain |
+| 3 | Wire configuration, cover image, `onOpenLink` callback through to both platforms | Example app loads a real map slug end-to-end on both platforms | 🟡 in progress (`coverImage` Dart→native serialization deliberately deferred — DESIGN §8 #5) |
+| 4 | Activity lifecycle forwarding (Android) and `ActivityAware` plumbing | Background / foreground / destroy cycle verified | ✅ code landed; runtime verification pending toolchain |
+| 5 | PlatformView composition checks (§6) and `Flutter/README.md` | All three cases documented with working snippets | 🟡 README skeleton landed; example-app verification not started |
+| 6 | Test suite: Dart unit tests + native plugin-glue tests + `integration_test` driven from the example app | Tests green on CI matrix (§7) | ⛔ not started |
+| 7 | Static analysis + dartdoc + `pana` pass | Zero analyzer warnings; `pana` category targets met (§7) | ⛔ not started |
+| 8 | Release readiness checklist (§7) | All checklist items satisfied; first pub.dev publish | ⛔ not started |
 
 Step 0 is a hard gate: implementation does not start until the design
 review has signed off and the §8 open questions have been resolved or
 explicitly deferred. After step 0, the Android plugin scaffold (1b)
 can run in parallel with the iOS refactor (1a), and steps 4 and 5 can
 overlap.
+
+See [`HANDOFF.md`](HANDOFF.md) for the concrete first commands a
+fresh local session should run and the list of fragile spots to
+validate before continuing.
