@@ -26,7 +26,7 @@ class PlatinumapsFlutterPlugin : FlutterPlugin, ActivityAware {
     private var factory: PlatinumapsPlatformViewFactory? = null
     private var activityBinding: ActivityPluginBinding? = null
     private val permissionsListener =
-        ActivityPluginBinding.RequestPermissionsResultListener { requestCode, _, grantResults ->
+        io.flutter.plugin.common.PluginRegistry.RequestPermissionsResultListener { requestCode, _, grantResults ->
             factory?.forwardPermissionResult(requestCode, grantResults)
             true
         }

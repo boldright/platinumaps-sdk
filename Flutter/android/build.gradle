@@ -1,12 +1,13 @@
 // Android-side build script for the Platinumaps Flutter plugin.
 //
 // The plugin wraps the existing native Android SDK
-// (`Android/platinumaps-sdk/`). For in-repo development a copy of the
-// SDK's release AAR is checked in at `libs/platinumaps-sdk.aar`; that
-// file must be refreshed whenever the underlying Kotlin source
-// changes. The long-term packaging decision (vendored sources,
-// vendored AAR, or Maven-published artifact) is tracked in
-// `Flutter/DESIGN.md` §8.
+// (`Android/platinumaps-sdk/`). For in-repo development the SDK's
+// Kotlin sources and resources are added to this plugin's
+// `sourceSets` via relative paths, so the plugin compiles as a single
+// library module without any pre-built AAR. When publishing to
+// pub.dev a release workflow copies those sources into
+// `src/main/kotlin/` and `src/main/res/` so the published package
+// stands on its own; see DESIGN §8 #4.
 
 group 'jp.co.boldright.platinumaps.flutter'
 version '0.1.0'
@@ -27,9 +28,6 @@ allprojects {
     repositories {
         google()
         mavenCentral()
-        flatDir {
-            dirs 'libs'
-        }
     }
 }
 
@@ -37,7 +35,14 @@ apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
-    namespace 'jp.co.boldright.platinumaps.flutter'
+    // The R / BuildConfig classes are generated under this namespace.
+    // The Kotlin sources we pull in from Android/platinumaps-sdk/ live in
+    // `jp.co.boldright.platinumaps.sdk` and reach for `R` / `BuildConfig`
+    // unqualified — so we keep the namespace aligned with the SDK
+    // package even though the plugin's own glue lives in
+    // `jp.co.boldright.platinumaps.flutter` (declared in pubspec.yaml as
+    // the Flutter plugin package).
+    namespace 'jp.co.boldright.platinumaps.sdk'
     compileSdk 36
 
     defaultConfig {
@@ -52,17 +57,30 @@ android {
         jvmTarget = '17'
     }
 
+    buildFeatures {
+        // The vendored SDK sources reach for `BuildConfig.DEBUG`. AGP 8+
+        // requires an explicit opt-in to generate the class.
+        buildConfig true
+    }
+
     sourceSets {
-        main.java.srcDirs += 'src/main/kotlin'
+        main.java.srcDirs += [
+            'src/main/kotlin',
+            // In-repo development: pull the SDK sources directly so the
+            // single library module compiles them in. The publish
+            // workflow copies these files into `src/main/kotlin/` before
+            // uploading to pub.dev.
+            '../../Android/platinumaps-sdk/src/main/java',
+        ]
+        main.res.srcDirs += [
+            '../../Android/platinumaps-sdk/src/main/res',
+        ]
     }
 }
 
 dependencies {
-    implementation(name: 'platinumaps-sdk', ext: 'aar')
-
-    // Transitive dependencies the AAR requires at runtime. The native
-    // SDK's own `build.gradle` declares these; we re-declare them here
-    // because flat-dir AARs do not carry their POMs.
+    // Same transitive dependencies the SDK module declares in
+    // `Android/platinumaps-sdk/build.gradle`.
     implementation 'androidx.core:core-ktx:1.13.1'
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.browser:browser:1.8.0'

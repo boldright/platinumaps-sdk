@@ -402,19 +402,49 @@ package from pub.dev see no `Android/` or `Package.swift` next to
 their copy.
 
 The published package therefore needs to carry the native SDK code
-itself. Three options are on the table, none yet selected:
+itself. Three options were considered:
 
 | Option | Android | iOS | Trade-off |
 |--------|---------|-----|-----------|
-| **Bundle sources at publish time** | Copy `Android/platinumaps-sdk` Kotlin sources into `Flutter/android/src/main/kotlin/...` as part of the publish workflow | Copy the iOS Swift sources into `Flutter/ios/Classes/...` and declare them as `source_files` in the podspec | Largest published artifact; in-repo and on-pub.dev layouts diverge; publish workflow must enforce parity |
-| **Bundle prebuilt artifacts** | Drop `platinumaps-sdk-release.aar` into `Flutter/android/libs/` and reference it as a flat-dir Gradle dependency | Vendor a prebuilt `xcframework` and reference it from the podspec | No source on pub.dev (harder to debug for consumers); has to be rebuilt for each release |
-| **External artifact repositories** | Publish the AAR to Maven Central (or a private Maven repo) and depend on it as a normal Gradle coordinate | Publish a separate CocoaPod, or rely on the existing Swift Package via a podspec that bridges to SPM | Cleanest separation; requires standing up and maintaining the publishing pipeline; ties release cadences across two artifacts |
+| **Bundle sources at publish time** ✅ | Copy `Android/platinumaps-sdk` Kotlin sources into `Flutter/android/src/main/kotlin/...` as part of the publish workflow | Copy the iOS Swift sources into `Flutter/ios/Classes/...` and declare them as `source_files` in the podspec | Largest published artifact; in-repo and on-pub.dev layouts diverge; publish workflow must enforce parity |
+| Bundle prebuilt artifacts | Drop `platinumaps-sdk-release.aar` into `Flutter/android/libs/` and reference it as a flat-dir Gradle dependency | Vendor a prebuilt `xcframework` and reference it from the podspec | No source on pub.dev (harder to debug for consumers); has to be rebuilt for each release |
+| External artifact repositories | Publish the AAR to Maven Central (or a private Maven repo) and depend on it as a normal Gradle coordinate | Publish a separate CocoaPod, or rely on the existing Swift Package via a podspec that bridges to SPM | Cleanest separation; requires standing up and maintaining the publishing pipeline; ties release cadences across two artifacts |
 
-Whatever option is chosen, the in-repo development experience is
-preserved: developers continue to edit `Android/platinumaps-sdk` and
-`iOS/platinumaps-sdk` directly, and the publish workflow handles the
-translation to pub.dev's shape. The decision is tracked as an open
-question (§8).
+**Decision: "Bundle sources at publish time" (Option 1).** This was
+adopted while wiring up the Flutter example app — vendoring the AAR
+with `flatDir` did not survive consumption from a Flutter host
+project (Gradle's flat-dir repositories are not transitively
+visible). Bundling sources keeps a single in-repo source of truth
+(developers continue to edit `Android/platinumaps-sdk/` and
+`iOS/platinumaps-sdk/` directly) and avoids the AAR-staleness risk
+described elsewhere in this document.
+
+In-repo wiring (now in place):
+
+- **Android:** `Flutter/android/build.gradle` adds
+  `../../Android/platinumaps-sdk/src/main/java` to the plugin's
+  `main.java.srcDirs` and `../../Android/platinumaps-sdk/src/main/res`
+  to `main.res.srcDirs`. The Android `namespace` is set to
+  `jp.co.boldright.platinumaps.sdk` so the generated `R` /
+  `BuildConfig` classes appear in the package the vendored sources
+  expect; the Flutter plugin glue continues to live in
+  `jp.co.boldright.platinumaps.flutter` (the package declared in
+  `pubspec.yaml`). `buildFeatures.buildConfig` is set to `true`
+  because the SDK reads `BuildConfig.DEBUG`.
+- **iOS:** the podspec already vendors `../../iOS/platinumaps-sdk/`
+  Swift sources via `s.source_files`, which is the same shape.
+
+Publish workflow (deferred to step 8, before the first pub.dev
+publish):
+
+- Copy `Android/platinumaps-sdk/src/main/java/**` →
+  `Flutter/android/src/main/kotlin/jp/co/boldright/platinumaps/sdk/`
+- Copy `Android/platinumaps-sdk/src/main/res/**` →
+  `Flutter/android/src/main/res/`
+- Copy `iOS/platinumaps-sdk/**` → `Flutter/ios/Classes/`
+- Drop the `srcDirs` overrides in `build.gradle` and the
+  `../../iOS/platinumaps-sdk` glob in the podspec
+- Verify byte-identity between source and copy in CI
 
 ## 6. PlatformView composition checks
 
@@ -541,11 +571,10 @@ introduce breaking changes with a clear CHANGELOG entry.
    historically ship as podspecs. Confirm whether bundling a podspec
    that re-exports the existing Swift Package is acceptable, or
    whether we need a podspec that vendors the sources directly.
-4. **Native SDK packaging for pub.dev.** Pick one of the three
-   options enumerated in §5 *Distribution* (source bundling, prebuilt
-   artifact vendoring, external artifact repositories). The choice
-   shapes the publish workflow and the consumer's `flutter pub get`
-   footprint.
+4. **Native SDK packaging for pub.dev.** ✅ *Resolved:* Option 1
+   (bundle sources at publish time), see §5 *Distribution*. In-repo
+   wiring is now in place; the publish-time copy step is tracked as
+   part of step 8.
 5. **Cover image parity.** Decide whether to add Android coverage
    for `coverImage` in the existing Android SDK, or freeze
    `PlatinumapsMapView.coverImage` as iOS-only in the Dart API and
