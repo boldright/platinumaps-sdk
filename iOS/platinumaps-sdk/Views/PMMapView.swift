@@ -251,13 +251,30 @@ public class PMMapView: UIView {
     /// Platinumaps origin. Swapped out only in tests / staging.
     private var mapOrigin = "https://platinumaps.jp"
 
-    /// Lazy handle to the SDK's resource bundle. The bundle is registered as
-    /// an SPM resource (`Package.swift` → `.process("Platinumaps.bundle")`)
-    /// and contains the localized strings used by the permission alerts.
+    /// Lazy handle to the SDK's resource bundle. The bundle has to be looked
+    /// up differently depending on how the SDK is integrated:
+    ///
+    /// - Swift Package Manager: `Package.swift` declares the resource via
+    ///   `.process("Platinumaps.bundle")`. SPM exposes the resources through
+    ///   the synthesized `Bundle.module` and namespaces them away from the
+    ///   host app's `Bundle.main`.
+    /// - Manual integration / CocoaPods (including the Flutter plugin's
+    ///   podspec, which uses `s.resources`): the bundle is copied verbatim
+    ///   into the host app's main bundle and can be opened by path.
     private var _bundle: Bundle? = nil
     private var bundle: Bundle {
         if _bundle == nil {
-            _bundle = Bundle(path: Bundle.main.path(forResource: "Platinumaps", ofType: "bundle")!)
+            #if SWIFT_PACKAGE
+            _bundle = Bundle.module
+            #else
+            if let bundlePath = Bundle.main.path(forResource: "Platinumaps",
+                                                 ofType: "bundle"),
+               let resolved = Bundle(path: bundlePath) {
+                _bundle = resolved
+            } else {
+                _bundle = Bundle.main
+            }
+            #endif
         }
         return _bundle!
     }
