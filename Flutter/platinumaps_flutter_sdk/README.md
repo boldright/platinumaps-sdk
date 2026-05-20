@@ -38,6 +38,10 @@ The SDK consumes a small set of device capabilities and triggers the
 platform permission prompts itself. The host application must
 declare the underlying entries:
 
+Keep only the entries that correspond to features the map you ship
+actually uses — leaving an unused declaration in place is harmless
+but bloats the App Store / Play Console permission disclosure.
+
 ### iOS — `Info.plist`
 
 ```xml
@@ -47,7 +51,14 @@ declare the underlying entries:
 <string>Used to detect iBeacons configured by the map operator.</string>
 <key>NSCameraUsageDescription</key>
 <string>Used by the map's camera-backed features.</string>
+<key>NSMicrophoneUsageDescription</key>
+<string>Used when the map records audio.</string>
 ```
+
+`NSMicrophoneUsageDescription` is required even if you only plan to
+use the camera, because iOS surfaces the microphone prompt for any
+`getUserMedia({ video: true })` call the embedded web layer might
+make.
 
 ### Android — `AndroidManifest.xml`
 
@@ -57,8 +68,18 @@ declare the underlying entries:
 <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
 <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
     android:usesPermissionFlags="neverForLocation"/>
+<uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+<!-- Legacy bluetooth permissions for API < 31. -->
+<uses-permission android:name="android.permission.BLUETOOTH"
+    android:maxSdkVersion="30"/>
+<uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
+    android:maxSdkVersion="30"/>
 <uses-permission android:name="android.permission.CAMERA"/>
+<uses-permission android:name="android.permission.RECORD_AUDIO"/>
 ```
+
+`example/android/app/src/main/AndroidManifest.xml` is a complete
+reference that you can copy from.
 
 The bare native Android SDK requires the host activity to forward
 five lifecycle callbacks (`onPause`, `onResume`, `onDestroy`,

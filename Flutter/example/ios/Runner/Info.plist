@@ -6,6 +6,12 @@
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Used to show your position on the map.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Used to scan QR codes from inside the map.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Used when the map records audio.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Used to detect indoor positioning beacons.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
