@@ -1,5 +1,8 @@
 import Flutter
 import UIKit
+#if SWIFT_PACKAGE
+import PlatinumapsSDK
+#endif
 
 /// Entry point of the Platinumaps Flutter plugin on iOS.
 ///

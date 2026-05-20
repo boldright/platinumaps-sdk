@@ -22,8 +22,13 @@ Flutter SDK for embedding the Platinumaps web map in a Flutter app.
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'Bold Right Inc.' => '' }
   s.source           = { :path => '.' }
+  # Both the CocoaPods build (single module: this podspec) and the
+  # SwiftPM build (`platinumaps_flutter_sdk/Package.swift`) read the
+  # same Swift sources. CocoaPods compiles them as one module, so the
+  # `import PlatinumapsSDK` lines inside the plugin glue are gated on
+  # `SWIFT_PACKAGE` and elide here.
   s.source_files     = [
-    'Classes/**/*.swift',
+    'platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/**/*.swift',
     '../../iOS/platinumaps-sdk/**/*.swift',
   ]
 

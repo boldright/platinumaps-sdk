@@ -1,5 +1,8 @@
 import Flutter
 import UIKit
+#if SWIFT_PACKAGE
+import PlatinumapsSDK
+#endif
 
 /// Creates a `PlatinumapsPlatformView` for each `PlatinumapsMapView`
 /// widget the Dart side builds.
