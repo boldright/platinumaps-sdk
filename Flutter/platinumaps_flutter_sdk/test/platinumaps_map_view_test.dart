@@ -67,7 +67,8 @@ void main() {
       // verifies the callback is invokable for whitelisted schemes.
       Uri? lastUrl;
       bool? lastShared;
-      final PlatinumapsOpenLinkCallback callback = (url, {required sharedCookie}) {
+      final PlatinumapsOpenLinkCallback callback =
+          (url, {required sharedCookie}) {
         lastUrl = url;
         lastShared = sharedCookie;
       };

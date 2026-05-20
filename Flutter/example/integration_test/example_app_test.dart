@@ -30,24 +30,25 @@ void main() {
     app.main();
     await tester.pumpAndSettle();
 
-    expect(find.byType(PlatinumapsMapView), findsOneWidget,
-        reason:
-            'The example app must render a PlatinumapsMapView on launch.');
+    expect(
+      find.byType(PlatinumapsMapView),
+      findsOneWidget,
+      reason: 'The example app must render a PlatinumapsMapView on launch.',
+    );
     expect(find.byType(AppBar), findsOneWidget);
     expect(find.text('Platinumaps demo'), findsOneWidget);
   });
 
-  testWidgets(
-    'the "last opened" overlay is hidden until onOpenLink fires',
-    (tester) async {
-      // The example app stacks an `IgnorePointer` banner above the
-      // PlatformView, but only after the host's `onOpenLink` callback
-      // has been invoked at least once. On a fresh launch (no link
-      // has been opened) the banner must not be visible.
-      app.main();
-      await tester.pumpAndSettle();
+  testWidgets('the "last opened" overlay is hidden until onOpenLink fires', (
+    tester,
+  ) async {
+    // The example app stacks an `IgnorePointer` banner above the
+    // PlatformView, but only after the host's `onOpenLink` callback
+    // has been invoked at least once. On a fresh launch (no link
+    // has been opened) the banner must not be visible.
+    app.main();
+    await tester.pumpAndSettle();
 
-      expect(find.textContaining('Last opened:'), findsNothing);
-    },
-  );
+    expect(find.textContaining('Last opened:'), findsNothing);
+  });
 }

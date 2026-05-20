@@ -181,8 +181,7 @@ class _PlatinumapsMapViewState extends State<PlatinumapsMapView> {
         );
       default:
         return ErrorWidget.withDetails(
-          message:
-              'PlatinumapsMapView is only supported on Android and iOS.',
+          message: 'PlatinumapsMapView is only supported on Android and iOS.',
         );
     }
   }

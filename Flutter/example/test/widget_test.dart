@@ -6,9 +6,7 @@ void main() {
   testWidgets('renders the demo map scaffold', (WidgetTester tester) async {
     await tester.pumpWidget(
       const MaterialApp(
-        home: Scaffold(
-          body: PlatinumapsMapView(mapSlug: 'demo'),
-        ),
+        home: Scaffold(body: PlatinumapsMapView(mapSlug: 'demo')),
       ),
     );
     expect(find.byType(PlatinumapsMapView), findsOneWidget);

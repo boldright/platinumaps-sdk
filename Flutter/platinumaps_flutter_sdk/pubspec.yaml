@@ -2,7 +2,7 @@ name: platinumaps_flutter_sdk
 description: Flutter SDK for embedding the Platinumaps web map in a Flutter app.
 version: 0.1.0
 homepage: https://github.com/boldright/platinumaps-sdk
-repository: https://github.com/boldright/platinumaps-sdk
+repository: https://github.com/boldright/platinumaps-sdk/tree/main/Flutter/platinumaps_flutter_sdk
 issue_tracker: https://github.com/boldright/platinumaps-sdk/issues
 
 environment:
