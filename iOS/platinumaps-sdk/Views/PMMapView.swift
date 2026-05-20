@@ -378,17 +378,21 @@ public class PMMapView: UIView {
         // Best-effort cleanup: stop any in-flight sensors and detach observers
         // so callbacks cannot fire into a deallocated view. We touch
         // `_locationManager` directly to avoid lazily creating one in deinit.
+        // UIView deallocation reliably runs on the main thread, so we assume
+        // the main-actor isolation rather than hopping.
         NotificationCenter.default.removeObserver(self)
-        retryTask?.cancel()
-        if let manager = _locationManager {
-            manager.stopUpdatingLocation()
-            manager.stopUpdatingHeading()
-            manager.stopMonitoringSignificantLocationChanges()
-            if let region = beaconRegion {
-                manager.stopRangingBeacons(satisfying: region.beaconIdentityConstraint)
-                manager.stopMonitoring(for: region)
+        MainActor.assumeIsolated {
+            retryTask?.cancel()
+            if let manager = _locationManager {
+                manager.stopUpdatingLocation()
+                manager.stopUpdatingHeading()
+                manager.stopMonitoringSignificantLocationChanges()
+                if let region = beaconRegion {
+                    manager.stopRangingBeacons(satisfying: region.beaconIdentityConstraint)
+                    manager.stopMonitoring(for: region)
+                }
+                manager.delegate = nil
             }
-            manager.delegate = nil
         }
     }
 

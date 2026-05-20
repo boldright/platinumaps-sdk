@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "PlatinumapsSDK",
+    defaultLocalization: "en",
     platforms: [.iOS(.v16)],
     products: [
         .library(name: "PlatinumapsSDK", targets: ["PlatinumapsSDK"]),
