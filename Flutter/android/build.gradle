@@ -1,0 +1,70 @@
+// Android-side build script for the Platinumaps Flutter plugin.
+//
+// The plugin wraps the existing native Android SDK
+// (`Android/platinumaps-sdk/`). For in-repo development a copy of the
+// SDK's release AAR is checked in at `libs/platinumaps-sdk.aar`; that
+// file must be refreshed whenever the underlying Kotlin source
+// changes. The long-term packaging decision (vendored sources,
+// vendored AAR, or Maven-published artifact) is tracked in
+// `Flutter/DESIGN.md` §8.
+
+group 'jp.co.boldright.platinumaps.flutter'
+version '0.1.0'
+
+buildscript {
+    ext.kotlin_version = '1.8.22'
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.1.0'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        flatDir {
+            dirs 'libs'
+        }
+    }
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+android {
+    namespace 'jp.co.boldright.platinumaps.flutter'
+    compileSdk 36
+
+    defaultConfig {
+        minSdk 24
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }
+}
+
+dependencies {
+    implementation(name: 'platinumaps-sdk', ext: 'aar')
+
+    // Transitive dependencies the AAR requires at runtime. The native
+    // SDK's own `build.gradle` declares these; we re-declare them here
+    // because flat-dir AARs do not carry their POMs.
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.browser:browser:1.8.0'
+    implementation 'com.google.android.gms:play-services-location:21.3.0'
+}
