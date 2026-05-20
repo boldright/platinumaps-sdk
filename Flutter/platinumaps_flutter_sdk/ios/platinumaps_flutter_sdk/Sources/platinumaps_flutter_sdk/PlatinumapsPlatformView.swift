@@ -4,6 +4,12 @@ import UIKit
 /// Hosts a `PMMapView` inside a Flutter PlatformView and bridges the
 /// `PMMapViewDelegate.openLink` callback through a per-instance
 /// `FlutterMethodChannel`.
+///
+/// PlatformView callbacks (`view()`, `init(frame:viewIdentifier:…)`,
+/// `applyCreationArguments`) are invoked on the main thread by
+/// Flutter; mark the class `@MainActor` so the Swift 6 strict
+/// concurrency checker can see that.
+@MainActor
 final class PlatinumapsPlatformView: NSObject, FlutterPlatformView, PMMapViewDelegate {
 
     private let mapView: PMMapView
@@ -24,7 +30,30 @@ final class PlatinumapsPlatformView: NSObject, FlutterPlatformView, PMMapViewDel
             binaryMessenger: messenger
         )
         super.init()
-        mv.delegate = self
+
+        // Only claim PMMapViewDelegate when the Dart side actually has
+        // an `onOpenLink` handler. Setting the delegate unconditionally
+        // would suppress PMMapView's default link handling
+        // (`SFSafariViewController` for HTTPS, `UIApplication.open` for
+        // other allowlisted schemes), causing every browse.* / map.navigate
+        // link to be silently dropped when the host did not supply a
+        // callback.
+        if args?["hasOpenLinkHandler"] as? Bool == true {
+            mv.delegate = self
+        }
+    }
+
+    deinit {
+        // Sever the delegate link before tearing down so an in-flight
+        // PMMapView callback cannot fire into a deallocated wrapper.
+        // PMMapView holds the delegate weakly, but clearing it is the
+        // mirror of the Android plugin's `webView.onOpenLinkListener =
+        // null` in dispose(). UIView deinit runs on the main thread,
+        // so we assume the main-actor isolation rather than hop —
+        // same pattern PMMapView uses for its own deinit cleanup.
+        MainActor.assumeIsolated {
+            mapView.delegate = nil
+        }
     }
 
     /// Maps the platform-channel creation-args dictionary onto a

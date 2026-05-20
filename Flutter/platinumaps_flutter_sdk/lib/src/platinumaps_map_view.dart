@@ -100,9 +100,20 @@ class PlatinumapsMapView extends StatefulWidget {
   final Uri? launchUrl;
 
   /// Invoked when the embedded web map asks the host to open a URL
-  /// outside the WebView. When `null`, the native SDK falls back to
-  /// its default link handling (`SFSafariViewController` on iOS,
-  /// Custom Tabs / external intent on Android).
+  /// outside the WebView.
+  ///
+  /// When `null`, behaviour depends on the platform:
+  ///
+  /// * iOS — the native SDK's defaults apply:
+  ///   `SFSafariViewController` for HTTPS/HTTP and `UIApplication.open`
+  ///   for the other allowlisted schemes (`tel`, `mailto`, `sms`,
+  ///   `geo`).
+  /// * Android — `browse.inapp` (non-shared-cookie) links open via
+  ///   Chrome Custom Tabs. `browse.app`, `map.navigate`, and
+  ///   shared-cookie `browse.inapp` links are silently dropped: the
+  ///   native Android SDK delegates those to the listener and has no
+  ///   internal fallback. Supply a callback if your maps emit any of
+  ///   those commands.
   final PlatinumapsOpenLinkCallback? onOpenLink;
 
   @override
@@ -131,6 +142,12 @@ class _PlatinumapsMapViewState extends State<PlatinumapsMapView> {
       'offsetBottom': widget.offsetBottom,
       if (widget.beacon != null) 'beacon': widget.beacon!.toMap(),
       if (widget.launchUrl != null) 'launchUrl': widget.launchUrl!.toString(),
+      // The native plugins consult this flag at creation time to decide
+      // whether to attach themselves as the SDK's openLink listener.
+      // Attaching unconditionally would suppress the native SDK's
+      // default link-handling fallbacks (SFSafariViewController on iOS,
+      // Custom Tabs on Android) whenever the host omits onOpenLink.
+      'hasOpenLinkHandler': widget.onOpenLink != null,
     };
   }
 

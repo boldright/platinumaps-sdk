@@ -30,7 +30,17 @@ internal class PlatinumapsPlatformView(
     )
 
     init {
-        webView.onOpenLinkListener = this
+        // Only claim the SDK's OnOpenLinkListener when the Dart side
+        // actually has an `onOpenLink` callback. Leaving the listener
+        // unset preserves the native SDK's default behaviour for the
+        // browse.inapp (non-shared) command, which falls back to
+        // CustomTabs. browse.app, map.navigate, and shared-cookie
+        // browse.inapp links remain undelivered when no host
+        // callback is wired — the native Android SDK has no internal
+        // fallback for those code paths today.
+        if (args?.get("hasOpenLinkHandler") as? Boolean == true) {
+            webView.onOpenLinkListener = this
+        }
         webView.openPlatinumaps(buildMapOptions(args))
     }
 

@@ -12,8 +12,8 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
   - SDK の request code (`PERMISSION_REQUEST_CODE`/`REQUEST_CODE_PERMISSIONS_LOCATION`/`REQUEST_CODE_PERMISSIONS_BEACON`/`FILE_CHOOSER_REQUEST_CODE`) を companion object に集約し、listener はその集合に含まれる場合のみ `true` を返すよう変更。
 - ✅ **#3** iOS: mapSlug='' (Dart 的に valid) でも fatalError 即死 — `iOS/platinumaps-sdk/Views/PMMapView.swift:290`
   - `fatalError` を撤去し、空 mapSlug を `os.Logger` 経由の `.error` ログ + early return に変更。force-unwrap (`mapSlug!`) も guard で shadow した non-optional に置換。
-- ⬜ **#4** iOS: Flutter plugin が delegate を常時セットし、Dart 側 onOpenLink=null の時にリンクが silent drop（ネイティブ既定の SFSafariViewController も発動しない） — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformView.swift:27`
-  - Dart の `onOpenLink` 設定有無を creation args で送り、未設定なら delegate を立てない。`#23` と一括対応。
+- ✅ **#4** iOS: Flutter plugin が delegate を常時セットし、Dart 側 onOpenLink=null の時にリンクが silent drop（ネイティブ既定の SFSafariViewController も発動しない） — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformView.swift:27`
+  - Dart `_creationParams()` で `hasOpenLinkHandler: widget.onOpenLink != null` を送信。iOS / Android plugin はそのフラグが true のときだけ `mv.delegate = self` / `webView.onOpenLinkListener = this` を立てる。null 時は SDK 既定のフォールバック（iOS: SFSafariViewController, Android: CustomTabs）が機能する。
 - ⬜ **#5** iOS: PMLocalizedStrings の言語解決が `Bundle.main.preferredLocalizations` に依存。Flutter host の Info.plist に `CFBundleLocalizations` 未宣言だと日本語デバイスでも英語に flat — `iOS/platinumaps-sdk/Types/PMLocalizedStrings.swift:11`
   - `Locale.current.languageCode` (or `Locale.preferredLanguages.first`) を先に使う方針へ。
 - ⬜ **#6** coverImage の Dart doc / README は「iOS で表示される」と書くが実装は両プラットフォーム未配線 — `Flutter/platinumaps_flutter_sdk/lib/src/platinumaps_map_view.dart:84`
@@ -28,8 +28,10 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
 - ⬜ **#11** Flutter example の Android main/AndroidManifest.xml に `INTERNET` 欠落 (release ビルドで WebView が動かない) — `Flutter/example/android/app/src/main/AndroidManifest.xml:1`
 - ⬜ **#12** example の `path: ../platinumaps_flutter_sdk` は published 時に example が同梱されると壊れる — `Flutter/example/pubspec.yaml:39`
 - ⬜ **#13** iOS PMMapView.swift に typo "fucn" — `iOS/platinumaps-sdk/Views/PMMapView.swift:1320`
-- ⬜ **#14** iOS plugin PlatinumapsPlatformView クラスに `@MainActor` 注釈なし — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformView.swift:7`
-- ⬜ **#15** iOS plugin: deinit で mapView.delegate = nil していない (Android との対称性 / 安全性) — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformView.swift:7`
+- ✅ **#14** iOS plugin PlatinumapsPlatformView クラスに `@MainActor` 注釈なし — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformView.swift:7`
+  - クラスに `@MainActor` 追加。
+- ✅ **#15** iOS plugin: deinit で mapView.delegate = nil していない (Android との対称性 / 安全性) — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/PlatinumapsPlatformView.swift:7`
+  - deinit を追加し、`MainActor.assumeIsolated { mapView.delegate = nil }` で delegate を解除（PMMapView 側 deinit と同じパターン）。
 - ⬜ **#16** Dart `_handleMethodCall` で `call.arguments as Map` の防御不足 + raw type — `Flutter/platinumaps_flutter_sdk/lib/src/platinumaps_map_view.dart:148`
 - ⬜ **#17** example の `_handleOpenLink` が `Future<void>` を返しエラーが捨てられる — `Flutter/example/lib/main.dart:32`
 - ⬜ **#18** 複数 PlatinumapsMapView 同時表示で permission/file chooser のルーティング衝突 — `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/jp/co/boldright/platinumaps/flutter/PlatinumapsPlatformViewFactory.kt:38`
@@ -37,7 +39,8 @@ Status legend: ⬜ todo / 🟡 in progress / ✅ done / ❌ won't fix.
 - ⬜ **#20** Android plugin: factory が `activity == null` を fallback context にし、permission request が無音失敗 — `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/jp/co/boldright/platinumaps/flutter/PlatinumapsPlatformViewFactory.kt:24`
 - ⬜ **#21** Flutter README の Configuration テーブルで coverImage を iOS ✓ と記載 (#6 と関連) — `Flutter/platinumaps_flutter_sdk/README.md:115`
 - ⬜ **#22** Flutter README の "Sample app: (to be added)" が陳腐化 — `Flutter/platinumaps_flutter_sdk/README.md:144`
-- ⬜ **#23** Flutter README / dartdoc が「onOpenLink=null でネイティブ既定にフォールバック」と書くが iOS は #4、Android は `browse.app` のみフォールバック — `Flutter/platinumaps_flutter_sdk/lib/src/platinumaps_map_view.dart:102`
+- ✅ **#23** Flutter README / dartdoc が「onOpenLink=null でネイティブ既定にフォールバック」と書くが iOS は #4、Android は `browse.app` のみフォールバック — `Flutter/platinumaps_flutter_sdk/lib/src/platinumaps_map_view.dart:102`
+  - #4 修正後、iOS は完全にフォールバック動作。Android は `browse.inapp` (non-shared) のみ CustomTabs フォールバック、`browse.app` / `map.navigate` / shared-cookie は silent drop。この差を dartdoc にプラットフォーム別箇条書きで明記。
 - ⬜ **#24** iOS XCTest `test_malformedLaunchUrlIsIgnored` のコメントが事実と逆ではないか（iOS 17+ では nil を返すが、念のため OS バージョン依存性を明示） — `Flutter/example/ios/RunnerTests/RunnerTests.swift:128`
 - ⬜ **#25** iOS Plugin の SwiftPM library 名がハイフン (`platinumaps-flutter-sdk`) — `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Package.swift:42`
 - ⬜ **#26** iOS PMMapView の `presentationViewController` 拡張と `pushLaunchURL` の responder walk が重複 — `iOS/platinumaps-sdk/Views/PMMapView.swift:457`
