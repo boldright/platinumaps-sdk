@@ -9,7 +9,7 @@ plugin references those via:
     `Sources/PlatinumapsSDK` (symlink → `../../../../../iOS/platinumaps-sdk/`)
   - `Flutter/example/` (sibling of the plugin — pub.dev needs the
     example physically inside the plugin)
-  - `Flutter/platinumaps_flutter_sdk/android/build.gradle` (Gradle
+  - `Flutter/platinumaps_flutter_sdk/android/build.gradle.kts` (Gradle
     `sourceSets` srcDirs entries pointing at
     `../../../Android/platinumaps-sdk/...`)
   - `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk.podspec`
@@ -149,36 +149,36 @@ def copy_example(snapshot: Path) -> None:
     archive_subtree("Flutter/example", snapshot / "example")
 
 
-_BUILD_GRADLE_NEEDLE = """    sourceSets {
-        main.java.srcDirs += [
-            'src/main/kotlin',
-            // In-repo development: pull the SDK sources directly so the
-            // single library module compiles them in. The publish
-            // workflow copies these files into `src/main/kotlin/` before
-            // uploading to pub.dev.
-            '../../../Android/platinumaps-sdk/src/main/java',
-        ]
-        main.res.srcDirs += [
-            '../../../Android/platinumaps-sdk/src/main/res',
-        ]
-    }
+_BUILD_GRADLE_NEEDLE = """        getByName("main") {
+            java.srcDirs(
+                "src/main/kotlin",
+                // In-repo development: pull the SDK sources directly
+                // so the single library module compiles them in. The
+                // publish workflow copies these files into
+                // `src/main/kotlin/` before uploading to pub.dev.
+                "../../../Android/platinumaps-sdk/src/main/java",
+            )
+            res.srcDirs(
+                "../../../Android/platinumaps-sdk/src/main/res",
+            )
+        }
 """
 
-_BUILD_GRADLE_REPLACEMENT = """    sourceSets {
-        main.java.srcDirs += 'src/main/kotlin'
-    }
+_BUILD_GRADLE_REPLACEMENT = """        getByName("main") {
+            java.srcDirs("src/main/kotlin")
+        }
 """
 
 
 def rewrite_build_gradle(snapshot: Path) -> None:
     """Drop the Android SDK `srcDirs` overrides now that the sources have
     been copied into the plugin's own `src/main/kotlin/` tree."""
-    bg = snapshot / "android/build.gradle"
+    bg = snapshot / "android/build.gradle.kts"
     original = bg.read_text(encoding="utf-8")
     if _BUILD_GRADLE_NEEDLE not in original:
         raise SystemExit(
             f"could not find the in-repo srcDirs block in {bg}; "
-            "the script is out of sync with build.gradle"
+            "the script is out of sync with build.gradle.kts"
         )
     bg.write_text(
         original.replace(_BUILD_GRADLE_NEEDLE, _BUILD_GRADLE_REPLACEMENT),
@@ -188,7 +188,7 @@ def rewrite_build_gradle(snapshot: Path) -> None:
 
 _PODSPEC_NEEDLE = """  s.source_files     = [
     'platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/**/*.swift',
-    '../../../iOS/platinumaps-sdk/**/*.swift',
+    'platinumaps_flutter_sdk/Sources/PlatinumapsSDK/**/*.swift',
   ]
 """
 
@@ -198,8 +198,9 @@ _PODSPEC_REPLACEMENT = (
 
 
 def rewrite_podspec(snapshot: Path) -> None:
-    """Drop the iOS SDK source glob from the podspec — those `.swift` files
-    now live under the plugin's own `Sources/PlatinumapsSDK/` directory."""
+    """Collapse the two source-file globs into one — at publish time the
+    `Sources/PlatinumapsSDK/` symlink is replaced with a real copy, so a
+    single recursive glob from `Sources/` covers both subtrees."""
     ps = snapshot / "ios/platinumaps_flutter_sdk.podspec"
     original = ps.read_text(encoding="utf-8")
     if _PODSPEC_NEEDLE not in original:
