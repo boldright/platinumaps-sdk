@@ -20,6 +20,18 @@ until 1.0.0. When the release tag is cut, rename this heading to
   `README.md` for the parity table. The iOS native SDK's `coverImage`
   is intentionally not exposed; render the splash from the Flutter
   host instead.
+- `PlatinumapsMapController` imperative handle. Attach via the
+  widget's `controller:` parameter and call `pushLaunchUrl(Uri)` to
+  forward a Universal Link / Custom URL Scheme that arrives after
+  the map has mounted, without rebuilding the widget (which would
+  lose the WebView's scroll position, session cookies, etc.).
+  Mirrors the iOS native SDK's `PMMapView.pushLaunchURL(_:)`.
+
+### Changed
+
+- Android plugin: supports both AGP 8 (Flutter 3.32-3.43) and AGP 9
+  (Flutter 3.44+). Host builds on Flutter 3.44 no longer emit the
+  KGP deprecation warning.
 - `PlatinumapsBeaconOptions` for iBeacon configuration (uuid +
   optional minSample / maxHistory / memo).
 - `PlatinumapsLocale` enum covering the eleven languages the

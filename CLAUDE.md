@@ -60,6 +60,15 @@ notifications, analytics, or auth UI. The host app supplies all of that.
 > `diff -r Android/platinumaps-sdk Android/sample/platinumaps-sdk` should
 > report no differences after any SDK change.
 
+> Same rule applies to the Flutter plugin's iOS-side mirror:
+> `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/PlatinumapsSDK/`
+> is a byte-identical copy of `iOS/platinumaps-sdk/`. CocoaPods cannot
+> follow a symlink into the canonical tree, so the Flutter plugin
+> ships its own copy. `diff -r iOS/platinumaps-sdk
+> Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/PlatinumapsSDK`
+> must report no differences. The CI `mirror-sync` job enforces both
+> rules.
+
 > Localized UI strings live in `i18n/strings.yaml` and are regenerated
 > into `iOS/platinumaps-sdk/Types/PMLocalizedStrings.swift` and
 > `Android/platinumaps-sdk/src/main/res/values{,-ja,-ko,-b+zh+Hans,

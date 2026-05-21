@@ -165,21 +165,26 @@ In-repo wiring:
   (the Flutter plugin glue itself lives in
   `jp.co.boldright.platinumaps.flutter`). `buildFeatures.buildConfig`
   is `true` because the SDK reads `BuildConfig.DEBUG`.
-- **iOS (SwiftPM)** — `Sources/PlatinumapsSDK/` is a symlink to
-  `../../../../../iOS/platinumaps-sdk/`. SwiftPM target paths must
-  stay inside the package root, hence the symlink rather than an
-  outside-the-package `path:`.
-- **iOS (CocoaPods)** — the podspec globs the same Swift sources
-  through a relative `../../../iOS/platinumaps-sdk/**/*.swift` so
-  both managers compile the same files.
+- **iOS** — `Sources/PlatinumapsSDK/` is a *byte-identical copy* of
+  `iOS/platinumaps-sdk/` (same pattern as the Android sample
+  mirror — see CLAUDE.md). Both the SwiftPM build
+  (`platinumaps_flutter_sdk/Package.swift`) and the CocoaPods build
+  (`platinumaps_flutter_sdk.podspec`) read from this in-package
+  copy. A symlink would have been preferable but CocoaPods on the
+  Flutter 3.32-3.43 path neither follows symlinks nor resolves the
+  `../../../iOS/platinumaps-sdk` relative glob from the
+  `ios/.symlinks/plugins/<plugin>/` install location, so the
+  generated `Pods.xcodeproj` ended up without the SDK sources. The
+  mirror sidesteps both problems. CI enforces
+  `diff -r iOS/platinumaps-sdk Flutter/.../Sources/PlatinumapsSDK`
+  in the `mirror-sync` job.
 
 Publish workflow — `scripts/prepublish.py`:
 
 - Copies the Kotlin sources into the plugin's `android/src/main/kotlin/`.
-- Copies the iOS sources into `Sources/PlatinumapsSDK/` (replacing the
-  symlink).
-- Drops the `srcDirs` overrides in `build.gradle` and the
-  `../../../iOS/platinumaps-sdk` glob in the podspec.
+- Drops the `srcDirs` overrides in `build.gradle.kts` and the
+  `Sources/PlatinumapsSDK` glob in the podspec into a single
+  recursive `Sources/**/*.swift` after publishing.
 - The CI `publish-dry-run` job exercises the snapshot end-to-end on
   every push.
 
@@ -235,6 +240,16 @@ CI (`.github/workflows/flutter-sdk-ci.yml`) enforces, on every push:
 Settled choices recorded so future contributors do not need to
 re-derive the rationale.
 
+- **AGP 8 / AGP 9 dual support.** The plugin's Android build script
+  uses Kotlin DSL with the `plugins { id("com.android.library") }`
+  block so it parses under AGP 8 (Flutter 3.32-3.43) and AGP 9
+  (Flutter 3.44+). The `kotlin-android` Gradle plugin is applied
+  via a runtime `if (agpMajor < 9)` guard — AGP 9+ bundles Kotlin
+  built-in, and applying KGP there triggers a deprecation warning
+  in the host project's build output. Both toolchains are verified
+  by building the example app with each AGP version pinned in
+  `Flutter/example/android/settings.gradle.kts`.
+
 - **Beacon configuration timing.** `PlatinumapsBeaconOptions` is
   passed through `creationParams` only; mutating Dart state after
   the widget is built has no effect until the widget rebuilds with a
@@ -278,11 +293,6 @@ re-derive the rationale.
   to ride the existing TestFlight + Play Console internal-track
   workflow — and (b) an independent end-to-end walkthrough of
   `README.md` by someone who did not write the SDK.
-- **Imperative controller for runtime pushes.** The iOS native SDK's
-  `pushLaunchURL(_:)` forwards a Universal Link / Custom URL Scheme
-  arriving *after* the map is on screen. The current Dart API only
-  accepts the URL via the `launchUrl` constructor parameter, which
-  requires rebuilding the widget (typically via a `ValueKey`) when
-  the URL changes. A `PlatinumapsMapController`-style handle exposed
-  through a `controller:` constructor parameter is the natural
-  escape hatch; defer until concrete demand is observed.
+- **Imperative controller scope.** `PlatinumapsMapController.pushLaunchUrl(Uri)`
+  is in place; runtime locale / beacon / query-param updates remain
+  rebuild-only. Add them when concrete demand is observed.

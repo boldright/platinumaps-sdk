@@ -10,8 +10,10 @@ and Android SDKs in this repository (`iOS/`, `Android/`); see
 ## Requirements
 
 - Flutter 3.32 or later (Dart 3.8 or later — `^3.8.0` in `pubspec.yaml`)
-- iOS 16+
-- Android API 24+ (Android 7.0)
+- iOS 16+ — matches the bundled iOS native SDK, which uses Swift
+  Concurrency and WebKit APIs that landed in iOS 16
+- Android API 24+ (Android 7.0) — matches the bundled Android native
+  SDK's `minSdk`
 
 ## Quick start
 
@@ -29,6 +31,15 @@ dependencies:
       path: Flutter/platinumaps_flutter_sdk
 ```
 
+When iterating on the SDK and a host app side-by-side, point at
+your local checkout instead:
+
+```yaml
+dependencies:
+  platinumaps_flutter_sdk:
+    path: ../../platinumaps-sdk/Flutter/platinumaps_flutter_sdk
+```
+
 Once published to pub.dev: `platinumaps_flutter_sdk: ^0.1.0`.
 
 ### 2. iOS deployment target — `ios/Podfile`
@@ -36,9 +47,6 @@ Once published to pub.dev: `platinumaps_flutter_sdk: ^0.1.0`.
 ```ruby
 platform :ios, '16.0'
 ```
-
-The default Flutter template uses iOS 12 or 13; pod resolution fails
-with confusing errors if it stays below 16.
 
 ### 3. iOS usage descriptions — `ios/Runner/Info.plist`
 
@@ -84,18 +92,13 @@ android {
 `BLUETOOTH_CONNECT` is *not* required — the SDK only scans for
 beacons, it does not establish GATT connections.
 
-### Troubleshooting
+### Note: Activity lifecycle / permission callbacks (Android)
 
-- **`Module 'platinumaps_flutter_sdk' not found` on iOS.** Flutter
-  caches its SwiftPM-generated artifacts; bumping the SDK or the
-  iOS deployment target sometimes leaves stale caches behind. Run
-  `flutter clean && flutter pub get` and rebuild.
-- **Activity lifecycle / permission callbacks.** The bare native
-  Android SDK requires the host activity to forward five callbacks
-  (`onPause`, `onResume`, `onDestroy`, `onRequestPermissionsResult`,
-  `onActivityResult`) into `PmWebView`. The Flutter plugin does this
-  forwarding automatically via `ActivityAware` — the host Flutter
-  app needs no extra plumbing.
+The bare native Android SDK requires the host activity to forward
+five callbacks (`onPause`, `onResume`, `onDestroy`,
+`onRequestPermissionsResult`, `onActivityResult`) into `PmWebView`.
+The Flutter plugin does this forwarding automatically via
+`ActivityAware` — the host Flutter app needs no extra plumbing.
 
 ## Usage
 
@@ -126,25 +129,24 @@ class MapScreen extends StatelessWidget {
 }
 ```
 
-`PlatinumapsMapView` is a regular Flutter widget, so it composes
-naturally with `Stack`, `Padding`, `SafeArea`, etc. To overlay your
-own UI on top of the map, wrap it in a `Stack`. Use `IgnorePointer`
-on full-bleed decorations so they do not steal gestures intended for
-the map.
+`PlatinumapsMapView` is a regular Flutter widget. A runnable example
+with overlay composition and `onOpenLink` plumbing lives in
+[`example/`](../example/).
 
 ## Configuration
 
 | Parameter | Description | iOS | Android |
 |-----------|-------------|-----|---------|
 | `mapSlug` *(required)* | Path appended to `https://platinumaps.jp/maps/` | ✓ | ✓ |
-| `queryParams` | Extra query string entries on the map URL | ✓ | ✓ |
+| `queryParams` | Extra query string entries on the map URL (keys are interpreted by the web layer — see the Platinumaps web docs) | ✓ | ✓ |
 | `locale` | Forces the map UI language | ✓ | ✓ |
 | `appStoreId` | App Store ID consumed by `app.review` | ✓ | — |
 | `userId` | Opaque user identifier exposed to the web layer | ✓ | — |
 | `secretKey` | Opaque shared secret exposed to the web layer | ✓ | — |
-| `offsetBottom` | Reports a zeroed bottom safe-area inset to the web | ✓ | — |
+| `offsetBottom` | Flag-style switch: non-zero tells the web layer to treat the bottom safe-area inset as `0` (the integer value is not used as a pixel distance — only its zero/non-zero quality matters today) | ✓ | — |
 | `beacon` | iBeacon ranging configuration | ✓ | ✓ |
 | `launchUrl` | Deep link forwarded to the web layer at first load | ✓ | — |
+| `controller` | [`PlatinumapsMapController`](#updating-configuration-at-runtime) handle for runtime operations | ✓ | ✓ |
 
 Fields marked `—` are accepted by the Dart API for forward
 compatibility but currently ignored on that platform.
@@ -156,13 +158,34 @@ mounting `PlatinumapsMapView` until your host-side splash finishes.
 
 ### Updating configuration at runtime
 
-Every field except `onOpenLink` is forwarded to the native side once,
-at PlatformView creation. Mutating Dart state (e.g. switching `locale`
-in a settings screen) **does not** restart the WebView with the new
-value — the existing PlatformView keeps the configuration it was
-constructed with.
+Constructor fields are forwarded to the native side once, at
+PlatformView creation. There are two ways to apply changes after
+the widget is on screen:
 
-The idiomatic Flutter pattern is to drive a rebuild from a key:
+**1. Runtime push via `PlatinumapsMapController`.** Attach a
+controller and call its methods to drive the map without losing
+the WebView's scroll position, selected spot, or session cookies.
+
+```dart
+final controller = PlatinumapsMapController();
+
+PlatinumapsMapView(
+  controller: controller,
+  mapSlug: 'demo',
+)
+
+// Later — for example, a Universal Link arrived after the map mounted:
+await controller.pushLaunchUrl(uri);
+```
+
+Available methods today:
+- `pushLaunchUrl(Uri url)` — mirror of the iOS native SDK's
+  `PMMapView.pushLaunchURL(_:)`. The URL is forwarded to the web
+  layer via `app.link`; if `web.ready` has not yet fired the native
+  side stashes the URL and replays it as soon as it arrives.
+
+**2. Widget rebuild with a fresh key** (for fields that the
+controller does not yet cover, like `locale` or `beacon`):
 
 ```dart
 PlatinumapsMapView(
@@ -175,22 +198,21 @@ PlatinumapsMapView(
 ```
 
 When any of the keyed inputs change, Flutter discards the old
-PlatformView and constructs a new one, picking up the new
-configuration. `onOpenLink` is the one exception: its closure is
-re-read on every method-channel callback, so swapping handlers does
-not require a rebuild.
+PlatformView and constructs a new one — which **resets the WebView**
+(scroll position, session cookies, selected spot all gone). Prefer
+the controller approach where it exists.
+
+`onOpenLink` is re-read on every method-channel callback, so
+swapping that closure never requires a rebuild.
 
 ## Known limitations
 
-- **No runtime `launchUrl` push.** The iOS native SDK exposes
-  `pushLaunchURL(_:)` for forwarding a Universal Link or Custom URL
-  Scheme that arrives *after* the map is on screen. The Flutter SDK
-  does not surface that yet — rebuild the widget with a new
-  `launchUrl` (and a fresh key) to trigger the same flow. A
-  `PlatinumapsMapController` handle is on the v1.0 wishlist.
-- **No bidirectional bridge.** The Dart side cannot send arbitrary
-  `command://` calls into the WebView; only the configuration knobs
-  listed above are forwarded.
+- **`PlatinumapsMapController` covers `pushLaunchUrl` only.** Other
+  runtime operations (e.g. `setLocale`) are still rebuild-only.
+- **No bidirectional bridge for arbitrary commands.** The Dart side
+  cannot send arbitrary `command://` calls into the WebView; only
+  the configuration knobs and controller methods listed above are
+  exposed.
 
 ## Sample app
 

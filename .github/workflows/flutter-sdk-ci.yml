@@ -181,3 +181,19 @@ jobs:
             iOS/platinumaps-sdk/Types/PMLocalizedStrings.swift \
             Android/platinumaps-sdk/src/main/res \
             Android/sample/platinumaps-sdk/src/main/res
+
+  mirror-sync:
+    name: Mirrored SDK trees stay byte-identical
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Android SDK mirror (sample copy)
+        # `Android/sample/platinumaps-sdk/` is a verbatim copy of
+        # `Android/platinumaps-sdk/` (CLAUDE.md mirror rule).
+        run: diff -r --exclude=build Android/platinumaps-sdk Android/sample/platinumaps-sdk
+      - name: iOS SDK mirror (Flutter plugin copy)
+        # CocoaPods cannot follow symlinks into the canonical
+        # `iOS/platinumaps-sdk/`, so the Flutter plugin keeps a
+        # byte-identical copy under
+        # `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/PlatinumapsSDK/`.
+        run: diff -r iOS/platinumaps-sdk Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/PlatinumapsSDK
