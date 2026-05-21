@@ -5,8 +5,8 @@ import UIKit
 ///
 /// Registers a single PlatformView factory keyed by
 /// `jp.co.boldright.platinumaps/map`. Each `PlatinumapsMapView` widget
-/// on the Dart side ends up backed by a `PMMapView` (the refactored
-/// public UIView in the native iOS SDK) hosted via `UiKitView`.
+/// on the Dart side ends up backed by a `PMMapView` (the native iOS
+/// SDK's public UIView) hosted via `UiKitView`.
 ///
 /// No application-lifecycle wiring is required from the host Flutter
 /// app — `PMMapView` self-installs the same `UIApplication`

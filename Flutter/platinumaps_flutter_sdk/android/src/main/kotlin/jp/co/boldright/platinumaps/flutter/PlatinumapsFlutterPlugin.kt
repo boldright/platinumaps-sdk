@@ -41,6 +41,7 @@ class PlatinumapsFlutterPlugin : FlutterPlugin, ActivityAware {
         // results.
         private val SDK_PERMISSION_REQUEST_CODES: Set<Int> = setOf(
             PmWebView.PERMISSION_REQUEST_CODE,
+            PmWebView.GEOLOCATION_PERMISSION_REQUEST_CODE,
             PmWebView.REQUEST_CODE_PERMISSIONS_LOCATION,
             PmWebView.REQUEST_CODE_PERMISSIONS_BEACON,
         )
@@ -103,11 +104,7 @@ class PlatinumapsFlutterPlugin : FlutterPlugin, ActivityAware {
 
         // `ActivityPluginBinding.lifecycle` returns Flutter's
         // `HiddenLifecycleReference`, which wraps the host Activity's
-        // androidx.lifecycle.Lifecycle. The `FlutterLifecycleAdapter`
-        // helper isn't shipped in the current Flutter Android engine
-        // artifact (only `HiddenLifecycleReference.class` is present
-        // under `io/flutter/embedding/engine/plugins/lifecycle/`), so
-        // we unwrap the reference directly here.
+        // androidx.lifecycle.Lifecycle.
         val lc = (binding.lifecycle as HiddenLifecycleReference).lifecycle
         lc.addObserver(lifecycleObserver)
         lifecycle = lc

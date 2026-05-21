@@ -1,8 +1,7 @@
 /// Languages supported by the Platinumaps web app.
 ///
 /// The wire value (see [code]) is sent as the `culture` query parameter
-/// the web app expects. Kept in sync with the iOS native SDK's `PMLocale`
-/// enum (`iOS/platinumaps-sdk/Types/PMLocale.swift`).
+/// the web app expects.
 enum PlatinumapsLocale {
   /// Japanese.
   ja('ja'),

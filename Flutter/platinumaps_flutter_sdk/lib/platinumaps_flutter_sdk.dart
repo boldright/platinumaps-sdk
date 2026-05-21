@@ -1,8 +1,10 @@
 /// Flutter SDK for embedding the [Platinumaps](https://platinumaps.jp)
 /// web map in a Flutter app.
 ///
-/// See `DESIGN.md` for the architecture and the existing iOS / Android
-/// native SDKs (`iOS/`, `Android/`) for the underlying bridge protocol.
+/// See the
+/// [project repository](https://github.com/boldright/platinumaps-sdk)
+/// for the architecture overview and the bridge protocol used by the
+/// underlying iOS / Android native SDKs.
 library;
 
 export 'src/platinumaps_beacon_options.dart';

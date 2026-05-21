@@ -4,21 +4,15 @@
 // (`Android/platinumaps-sdk/`). For in-repo development the SDK's
 // Kotlin sources and resources are added to this plugin's
 // `sourceSets` via relative paths, so the plugin compiles as a single
-// library module without any pre-built AAR. When publishing to
-// pub.dev a release workflow copies those sources into
+// library module without any pre-built AAR. The publish workflow
+// (`scripts/prepublish.py`) copies those sources into
 // `src/main/kotlin/` and `src/main/res/` so the published package
-// stands on its own; see DESIGN §8 #4.
+// stands on its own.
 
 group 'jp.co.boldright.platinumaps.flutter'
 version '0.1.0'
 
 buildscript {
-    // Keep the AGP / Kotlin versions aligned with both the Android
-    // sample (`Android/sample/build.gradle`, AGP 8.12.0) and the
-    // Flutter example (`Flutter/example/android/settings.gradle.kts`).
-    // Bumping past Kotlin 2.0 lets the Compose Compiler plugin in the
-    // Android sample stay on `org.jetbrains.kotlin.plugin.compose
-    // 2.0.21` without a Kotlin-version mismatch.
     ext.kotlin_version = '2.0.21'
     repositories {
         google()

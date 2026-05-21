@@ -15,6 +15,9 @@ all UI, navigation, auth, and analytics.
   installation, public API, required `Info.plist` entries, delegate hooks.
 - **[Android integration guide](Android/README.md)** — `AndroidManifest.xml`
   permissions, `PmWebView` lifecycle contract, sample integration.
+- **[Flutter integration guide](Flutter/platinumaps_flutter_sdk/README.md)**
+  — `platinumaps_flutter_sdk` plugin (`PlatinumapsMapView` widget), Quick
+  start setup checklist, runnable example at `Flutter/example/`.
 - **[CLAUDE.md](CLAUDE.md)** — architecture, bridge protocol, threading
   model, security notes, build instructions. Read this first if you intend
   to modify the SDK.

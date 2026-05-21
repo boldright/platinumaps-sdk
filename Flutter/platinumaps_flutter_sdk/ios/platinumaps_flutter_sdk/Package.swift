@@ -12,9 +12,9 @@
 //                                        single source of truth live under
 //                                        `iOS/platinumaps-sdk/` and still be
 //                                        compiled as a target here. The
-//                                        publish workflow (DESIGN §5) replaces
-//                                        the symlink with a real copy before
-//                                        uploading to pub.dev.
+//                                        publish workflow (`scripts/prepublish.py`)
+//                                        replaces the symlink with a real copy
+//                                        before uploading to pub.dev.
 //
 // Plugin glue and SDK sources compile into a single
 // `platinumaps_flutter_sdk` target. Two reasons:

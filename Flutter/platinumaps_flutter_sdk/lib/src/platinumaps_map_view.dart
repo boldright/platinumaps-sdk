@@ -22,11 +22,11 @@ typedef PlatinumapsOpenLinkCallback =
 
 /// Embeds the Platinumaps web map as a Flutter widget.
 ///
-/// The widget hosts the platform-native WebView (iOS `PMMapView`,
-/// Android `PmWebView`) via a `PlatformView`. Configuration is passed
-/// through to the native side at construction time; changing
-/// configuration after the widget is built has no effect until the
-/// widget is rebuilt with a new key.
+/// The widget hosts the platform-native WebView via a `PlatformView`.
+/// Configuration values are passed to the native side at construction
+/// time; the [onOpenLink] closure can be swapped on every rebuild and
+/// the latest one is invoked, but other fields require rebuilding the
+/// widget with a new key to take effect.
 class PlatinumapsMapView extends StatefulWidget {
   /// Creates a Platinumaps map widget.
   const PlatinumapsMapView({
@@ -38,7 +38,6 @@ class PlatinumapsMapView extends StatefulWidget {
     this.userId,
     this.secretKey,
     this.offsetBottom = 0,
-    this.coverImage,
     this.beacon,
     this.launchUrl,
     this.onOpenLink,
@@ -46,9 +45,7 @@ class PlatinumapsMapView extends StatefulWidget {
 
   /// The map identifier appended to `https://platinumaps.jp/maps/`.
   ///
-  /// May include a sub-path (e.g. `demo/sr999`). Serialized as
-  /// `mapSlug` on iOS and `mapPath` on Android — the two native SDKs
-  /// disagree on the field name; the Flutter plugin glue translates.
+  /// May include a sub-path (e.g. `demo/sr999`).
   final String mapSlug;
 
   /// Optional extra query parameters merged into the map URL.
@@ -79,17 +76,6 @@ class PlatinumapsMapView extends StatefulWidget {
   /// bottom inset (e.g. a tab bar).
   final int offsetBottom;
 
-  /// Splash image shown on top of the WebView until the web layer
-  /// signals `web.ready`.
-  ///
-  /// **Not yet wired in v0.1.** The parameter is part of the public
-  /// API for forward compatibility, but Dart `ImageProvider` has no
-  /// stable wire representation across the platform channel and v0.1
-  /// drops the value on both platforms. Until the parity follow-up
-  /// in `DESIGN.md` §8 #5 lands, host a Flutter splash widget above
-  /// the map in a `Stack` if you need one.
-  final ImageProvider? coverImage;
-
   /// Beacon ranging configuration. Pass `null` to disable beacon
   /// scanning entirely.
   final PlatinumapsBeaconOptions? beacon;
@@ -97,8 +83,7 @@ class PlatinumapsMapView extends StatefulWidget {
   /// Initial deep-link URL captured from a Universal Link / Custom
   /// URL Scheme launch. The web layer consumes it once it is ready.
   ///
-  /// Runtime pushes (the equivalent of the iOS native SDK's
-  /// `pushLaunchURL`) are not supported in v0.1; rebuild the widget
+  /// Runtime pushes are not currently supported; rebuild the widget
   /// with a new [launchUrl] to retrigger.
   final Uri? launchUrl;
 

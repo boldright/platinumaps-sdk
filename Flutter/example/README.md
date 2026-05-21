@@ -1,17 +1,32 @@
-# example
+# Platinumaps Flutter SDK example
 
-A new Flutter project.
+A runnable Flutter app that embeds the public Platinumaps demo map
+through the `platinumaps_flutter_sdk` plugin. Use it to smoke-test
+the plugin during development or as a copy-paste reference for the
+integration in your own app.
 
-## Getting Started
+## Running
 
-This project is a starting point for a Flutter application.
+From this directory:
 
-A few resources to get you started if this is your first Flutter project:
+```bash
+flutter pub get
+flutter run
+```
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+To target a specific device, list the available ones first
+(`flutter devices`) and then `flutter run -d <id>`.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## What it demonstrates
+
+- Mounting a `PlatinumapsMapView` against the `demo` map.
+- Forwarding `onOpenLink` URLs to the system browser via
+  [`url_launcher`](https://pub.dev/packages/url_launcher).
+- Composing a Flutter overlay above the PlatformView in a `Stack`
+  while keeping map gestures untouched.
+
+For the full integration guide see
+[`../platinumaps_flutter_sdk/README.md`](../platinumaps_flutter_sdk/README.md).
+The runtime permissions declared in
+`android/app/src/main/AndroidManifest.xml` and `ios/Runner/Info.plist`
+are the same set the integration guide asks host apps to copy.

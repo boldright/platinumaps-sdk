@@ -1,65 +1,51 @@
 # Flutter SDK — Design
 
-Status: **Implementation in progress** on
-`claude/develop-flutter-sdk-AF35z`. This document is the canonical
-reference for *why* the SDK is shaped the way it is; the roadmap in
-§9 tracks how far the work has progressed.
+Contributor-facing reference for *why* the Platinumaps Flutter SDK is
+shaped the way it is. End-user integration instructions live in
+[`platinumaps_flutter_sdk/README.md`](platinumaps_flutter_sdk/README.md);
+this document complements that with the rationale a maintainer needs
+to make consistent changes.
 
-## 1. Goal
+## 1. Goal & non-goals
 
-Provide a Flutter package that lets a Flutter host application embed the
-Platinumaps web layer with the same fidelity the existing iOS and Android
-native SDKs offer — geolocation, heading (Android), iBeacon ranging,
-in-app browser, store review, file chooser, and the `command://` bridge —
-while remaining publishable on pub.dev and composable with the host's own
-Flutter widgets.
+The Flutter SDK lets a Flutter host application embed the Platinumaps
+web layer with the same fidelity the existing iOS and Android native
+SDKs offer — geolocation, heading (Android), iBeacon ranging, in-app
+browser, store review, file chooser, and the `command://` bridge —
+while remaining publishable on pub.dev and composable with the host's
+own Flutter widgets.
 
-### Non-goals (for the first release)
+Out of scope for v1:
 
 - **Customer-facing extension hooks** (custom commands, swappable
-  permission UI, alternate WebView engines). Treated as future work; not
-  designed for in v1.
-- **Federated plugin layout.** A federated Flutter plugin splits into
-  four packages — an app-facing facade, a `platform_interface`, and
-  one implementation package per platform (e.g. `_android`, `_ios`,
-  `_web`). The pattern is the right answer when third parties are
-  expected to contribute new platform implementations, or when each
-  platform needs an independent release cadence (see `url_launcher`,
-  `path_provider`). Neither applies here: the SDK targets iOS and
-  Android only, no third-party implementation is expected, and the
-  existing native SDKs in this repo are referenced by relative path,
-  not as separately-published artifacts. v1 ships as a single
-  non-federated package; a future migration to a federated layout
-  remains possible if web or desktop targets become requirements.
+  permission UI, alternate WebView engines).
+- **Federated plugin layout.** v1 targets iOS and Android only, no
+  third-party implementation is expected. A future migration remains
+  possible if web or desktop become requirements.
 - **Web / desktop targets.** Mobile only.
 
 ## 2. Approach: wrap the existing native SDKs
 
-The Flutter SDK delegates all WebView ownership, `command://` parsing, and
-OS-level integrations to the existing `PmWebView` (Android) and the
-refactored `PMMapView` (iOS, see §4). The Flutter layer is a thin
-PlatformView host plus a Dart configuration / event surface.
+The Flutter SDK delegates all WebView ownership, `command://` parsing,
+and OS-level integrations to the existing `PmWebView` (Android) and
+`PMMapView` (iOS). The Flutter layer is a thin PlatformView host plus
+a Dart configuration / event surface.
 
 ### Why not reimplement in Dart
 
-The native SDKs are not a thin protocol decoder. As of this writing:
-
-- Android `PmWebView`: 1,989 lines.
-- iOS `PMMainViewController`: 1,585 lines.
-
-The complexity lives in the parts that took multiple iterations to get
-right:
+The native SDKs are not thin protocol decoders (`PmWebView` is ~2,000
+lines; the iOS counterpart similar). The complexity lives in parts
+that took multiple iterations to get right:
 
 - Bridge security — JSON-encoding every argument before
   `evaluateJavascript` to defeat injection via URL-controlled
   `requestId`.
 - Scheme allowlisting for `browse.app` / `browse.inapp` / `map.navigate`.
-- Initial-load retry with exponential backoff (~170 lines per platform).
+- Initial-load retry with exponential backoff.
 - Concurrency fixes (BLE callback main-thread bounce, NaN/Infinity
-  filtering before JSON serialization, magnetometer cleanup on destroy,
-  beacon UUID validation up front, …).
-- The growing command catalogue (recent additions: `stamprally.qrcode`,
-  `search.focus`).
+  filtering before JSON serialization, magnetometer cleanup, beacon
+  UUID validation, …).
+- The growing command catalogue.
 
 A Dart re-implementation would either copy these line-by-line and risk
 re-introducing solved problems, or drift from the native SDKs as the
@@ -68,590 +54,235 @@ every past and future fix for free.
 
 ### Alternatives considered
 
-| | Approach 1: Pure Dart | Approach 2: Hybrid | **Approach 3: Wrap native SDKs (chosen)** |
+| | Pure Dart | Hybrid (Dart bridge + native sensors) | **Wrap native SDKs (chosen)** |
 |---|---|---|---|
-| WebView | `flutter_inappwebview` | `flutter_inappwebview` | Native `PmWebView` / `PMMapView` via PlatformView |
+| WebView | `flutter_inappwebview` | `flutter_inappwebview` | Native `PmWebView` / `PMMapView` |
 | `command://` parsing | Dart | Dart | Native |
 | Bridge security / retry | Dart re-implementation | Dart re-implementation | Inherited |
-| Location / compass / file / permissions | pub.dev packages | Native code extracted via MethodChannel | Native |
-| iBeacon | Native code extracted via MethodChannel | Native code extracted via MethodChannel | Native |
+| Sensors / iBeacon | pub packages + native bridge | Native via MethodChannel | Native |
 | Effort to ship v1 | High | High | Low |
 | Effort to follow upstream | Per-command port | Per-command port | Bump native SDK version |
-| Customer extension surface | Large (Dart hooks) | Large (Dart hooks) | Limited to whatever the native SDKs expose |
+| Customer extension surface | Large | Large | Limited to what the native SDKs expose |
 
-Customer extensibility was the main reason to consider 1 / 2. With it
-demoted to non-goal (§1), the wrap approach is the cheapest path and the
-one most aligned with the existing investment.
+Customer extensibility was the only reason to consider 1 or 2. With it
+demoted to non-goal, wrap is the cheapest path and aligns with the
+existing native investment.
 
 ## 3. Architecture
 
 ```
 +----------------------------------------------------+
 | Flutter host app                                   |
-|                                                    |
 |   PlatinumapsMapView(...)   ←  Dart Widget API     |
 +------------------|---------------------------------+
                    |
 +------------------v---------------------------------+
 | platinumaps_flutter_sdk (this package)             |
-|                                                    |
 |   Dart: PlatinumapsMapView, options, callbacks     |
-|   ├── AndroidView       (Android, hybrid comp.)    |
-|   ├── UiKitView         (iOS)                      |
-|   │     ↑ creation arguments carry the full        |
-|   │       PlatinumapsMapView configuration         |
+|   ├── AndroidView      (Android, hybrid comp.)     |
+|   ├── UiKitView        (iOS)                       |
 |   └── MethodChannel: jp.co.boldright.platinumaps   |
-|         (native → Dart: onOpenLink callback)       |
+|        (native → Dart: onOpenLink callback)        |
 +------------------|---------------------------------+
                    |
 +------------------v---------------------------------+
 | Plugin native layer                                |
-|                                                    |
 |   Android: PlatinumapsPlatformViewFactory          |
-|             └─ wraps existing PmWebView            |
+|             └─ wraps PmWebView                     |
 |   iOS:    PlatinumapsPlatformViewFactory           |
-|             └─ wraps refactored PMMapView          |
+|             └─ wraps PMMapView                     |
 +------------------|---------------------------------+
                    |
 +------------------v---------------------------------+
 | Existing native SDKs (this repo)                   |
-|                                                    |
-|   Android/platinumaps-sdk   (Kotlin, unchanged)    |
-|   iOS/platinumaps-sdk       (Swift, refactored §4) |
+|   Android/platinumaps-sdk   (Kotlin)               |
+|   iOS/platinumaps-sdk       (Swift)                |
 +----------------------------------------------------+
 ```
 
-### Repository layout (after these changes)
-
-```
-.
-├── CLAUDE.md
-├── README.md
-├── Package.swift                          ← existing iOS Swift Package
-├── i18n/strings.yaml                      ← shared L10n source-of-truth
-├── scripts/generate-strings.py            ← regenerates the platform L10n files
-├── iOS/                                   ← existing iOS SDK (refactored)
-├── Android/                               ← existing Android SDK (unchanged)
-└── Flutter/                               ← new
-    ├── DESIGN.md                          ← this document
-    ├── example/                           ← runnable sample app
-    └── platinumaps_flutter_sdk/           ← the Flutter plugin itself
-        ├── README.md                      ← integration guide for Flutter hosts
-        ├── pubspec.yaml
-        ├── lib/                           ← Dart implementation
-        ├── android/                       ← Gradle project; bundles SDK sources
-        │                                    via `sourceSets` pointing at
-        │                                    `../../../Android/platinumaps-sdk/src/main`
-        └── ios/                           ← CocoaPods + SwiftPM
-            ├── platinumaps_flutter_sdk.podspec
-            └── platinumaps_flutter_sdk/   ← SwiftPM package
-                ├── Package.swift
-                └── Sources/
-                    ├── platinumaps_flutter_sdk/   ← plugin glue
-                    └── PlatinumapsSDK/            ← symlink to ../../../../../iOS/platinumaps-sdk
-```
-
 The plugin directory has to be named `platinumaps_flutter_sdk` to
-match the pubspec `name:`; Flutter's plugin-injection step uses that
-directory basename as the SwiftPM package identity when it generates
-the host workspace's local override, and a mismatch causes Xcode to
-reject the package graph. The monorepo segment name `Flutter/` is
-kept as the parent so the existing `iOS/`, `Android/`, `Flutter/`
-naming stays consistent.
+match `pubspec.yaml`'s `name:`; Flutter's plugin-injection step uses
+that directory basename as the SwiftPM package identity, and a
+mismatch causes Xcode to reject the package graph.
 
-The two existing Android sample-mirror directories
-(`Android/platinumaps-sdk` and `Android/sample/platinumaps-sdk`,
-required by CLAUDE.md to stay byte-identical) are unaffected. The
-Flutter plugin's `android/` references the canonical
-`Android/platinumaps-sdk` only.
+### iOS — `PMMapView` extraction
 
-## 4. iOS refactor: `PMMainViewController` → `PMMapView`
+Flutter's `UiKitView` requires a `UIView`, but the original iOS SDK's
+entry point (`PMMainViewController`) is a `UIViewController`. The iOS
+SDK was refactored so all bridge / WebView / sensor logic lives on
+`PMMapView` (a `UIView`), with `PMMainViewController` kept as a thin
+forwarding wrapper for existing native-iOS integrators. The current
+shape is the source of truth — see `iOS/platinumaps-sdk/Views/PMMapView.swift`.
 
-Flutter's `UiKitView` requires a `UIView`. The current iOS SDK's entry
-point, `PMMainViewController`, is a `UIViewController`. We refactor the
-SDK so the entirety of the bridge / WebView / sensor logic lives on a
-`UIView` subclass that PlatformView can host directly.
+One subtlety: `UIView` cannot present view controllers, so calls like
+`UIAlertController` / `SFSafariViewController` need a `UIViewController`
+to host them. `PMMapView.presentationViewController` walks the
+responder chain (`self.next` until a `UIViewController` is found) and
+then descends `presentedViewController` to the top of any modal stack
+already in flight. The lookup lands on `PMMainViewController` in the
+native path and on `FlutterViewController` in the Flutter path —
+same observable presentation semantics in both.
 
-### Migration shape
+### Threading
 
-```
-Before:
-  PMMainViewController (UIViewController)
-    └─ all logic (~1,585 lines)
+- **iOS** — `PMMapView` is a `UIView`, implicitly `@MainActor` under
+  UIKit's Swift 6 annotations. All bridge callbacks
+  (`evaluateJavaScript`, `WKNavigationDelegate`, location / beacon
+  delegates) are main-thread. The one explicit `Task.sleep` (120 ms
+  heading-catchup after the first location sample) marshals back to
+  the main actor via `[weak self]`. `deinit` wraps sensor cleanup in
+  `MainActor.assumeIsolated { … }` because `UIView` deallocation runs
+  on the main thread.
+- **Android** — `WebView` and all mutable state is touched only from
+  the main looper. BLE `ScanCallback` arrives on a binder thread, so
+  `leScanCallback` re-posts every result through `mainHandler` before
+  mutating `beaconBuffer`.
 
-After:
-  PMMapView (UIView)                  ← new, holds all logic
-    └─ embedded directly by Flutter via UiKitView
-
-  PMMainViewController (UIViewController)
-    └─ thin wrapper (~100 lines) that:
-        - owns a PMMapView,
-        - forwards every existing public property / delegate to it,
-        - so existing native-iOS integrators keep working unchanged.
-```
-
-### Lifecycle mapping
-
-| `UIViewController` | `UIView` replacement |
-|--------------------|----------------------|
-| `viewDidLoad` | `init(frame:)` + lazy setup on first `didMoveToWindow` |
-| `viewDidAppear` | `didMoveToWindow` with an `isFirstAttach` latch |
-| `view.safeAreaInsets` | `self.safeAreaInsets` |
-| `view.addSubview` | `self.addSubview` |
-| `view.bringSubviewToFront` | `self.bringSubviewToFront` |
-| `UIApplication.willEnter/didEnterBackground` observers | unchanged |
-| `CLLocationManagerDelegate` | unchanged |
-
-### The `present(_:animated:)` problem
-
-`PMMainViewController` calls `present` in roughly a dozen places —
-`UIAlertController` for permission-denied dialogs,
-`SFSafariViewController` for the in-app browser,
-`UIDocumentPickerViewController` for the file chooser, and so on.
-`UIView` cannot present view controllers, so the refactor needs to
-route every one of these calls to a real `UIViewController`.
-
-There are two sub-problems, and **the existing SDK already solves the
-harder one**:
-
-1. *Which* `UIViewController` should host the presentation?
-2. *What if* that `UIViewController` is already presenting another
-   modal (e.g., a host-app sheet, a previous permission alert, the
-   in-app browser)?
-
-For (2), `PMMainViewController` overrides `present(_:animated:)`
-([`PMMainViewController.swift:437-456`](../iOS/platinumaps-sdk/ViewControllers/PMMainViewController.swift))
-and walks `presentedViewController` to the top of the modal stack
-before forwarding the call. This avoids the "Attempt to present X on
-Y while Z is presented" warning and is the behaviour we need to
-preserve. Note this is not a hypothetical: a host-app modal can be
-sitting on top of the map while the WebView triggers a permission
-alert asynchronously.
-
-For (1), `PMMapView` walks the responder chain (`self.next` until a
-`UIViewController` is reached) to find its owning view controller.
-This is the standard UIKit pattern used by SwiftMessages, SVProgressHUD,
-and many Flutter plugins (`share_plus`, `firebase_auth`). The chain
-yields the same `UIViewController` that hosts the view in both
-deployment paths:
-
-- Legacy native-iOS path: the lookup lands on the
-  `PMMainViewController` wrapper.
-- Flutter path: the lookup lands on the `FlutterViewController`
-  hosting the `UiKitView`.
-
-The two sub-problems compose: find the owning `UIViewController`, then
-apply the existing topmost-presented walk to it. Concretely:
-
-```swift
-extension UIView {
-    /// The UIViewController on which `present(_:animated:)` should be
-    /// invoked from this view's context, accounting for any modal
-    /// chain already in flight.
-    var presentationViewController: UIViewController? {
-        var responder: UIResponder? = self
-        var owner: UIViewController?
-        while let r = responder {
-            if let vc = r as? UIViewController { owner = vc; break }
-            responder = r.next
-        }
-        guard var top = owner else { return nil }
-        while let next = top.presentedViewController { top = next }
-        return top
-    }
-}
-```
-
-This produces the same observable behaviour as the existing override —
-the same `UIViewController` ends up calling `present`, just discovered
-via the view rather than via `self` — so the refactor does not change
-the SDK's presentation semantics. The existing `PMMainViewController`
-override is removed because the logic now lives at the `PMMapView`
-layer and is applied uniformly.
-
-**Known constraint (unchanged from current SDK):** when the owning
-view controller is not yet in a window hierarchy, `UIKit` cannot
-present modally. The current SDK has the same constraint
-(`PMMainViewController` cannot present before it is in a window),
-and the SDK's presentation calls fire in response to user actions or
-sensor callbacks that necessarily occur after the view is on screen.
-No new risk is introduced.
-
-### Backwards compatibility
-
-Existing iOS integrators use `PMMainViewController` directly (see
-[`iOS/README.md`](../iOS/README.md)). After the refactor:
-
-- Every public property (`mapSlug`, `mapQuery`, `mapLocale`,
-  `appStoreId`, `coverImage`, `userId`, `secretKey`, `offsetBottom`,
-  `launchURL`, `isWebViewInspectable`) is preserved on
-  `PMMainViewController`. The wrapper forwards each into its child
-  `PMMapView`.
-- `PMMainViewControllerDelegate` (currently exposing `openLink`) remains
-  the way native callers customise link handling.
-- The package's `Package.swift` continues to expose
-  `PMMainViewController` as the documented entry point.
-
-A regression pass against the public API (manual smoke test of the
-existing iOS sample integration described in `iOS/README.md`) gates the
-refactor.
-
-## 5. Flutter plugin
-
-### Android
-
-- Single `FlutterPlugin` implementation registered in `pubspec.yaml`.
-- `PlatformViewFactory` returns a `PlatformView` whose `getView()` is a
-  configured `PmWebView`. Configuration arrives once via the creation
-  arguments (`PmMapOptions`).
-- The plugin implements `ActivityAware`, `PluginRegistry.RequestPermissionsResultListener`,
-  and `PluginRegistry.ActivityResultListener` so the host app does **not**
-  need to forward Activity callbacks itself. This is a strict
-  ergonomics improvement over the existing native Android SDK, which
-  requires the host to wire five lifecycle callbacks manually
-  (see CLAUDE.md §"Lifecycle contract").
-- `activityPause` / `activityResume` / `activityDestroy` are driven from
-  `ActivityAware` and `FlutterPlugin` shutdown.
-
-### iOS
-
-- Single Swift `FlutterPlugin` registers a
-  `FlutterPlatformViewFactory`.
-- The factory returns a `FlutterPlatformView` whose `view()` is the
-  refactored `PMMapView`. Configuration arrives once via the creation
-  arguments.
-- No host-app lifecycle wiring required; `PMMapView` self-installs the
-  same NotificationCenter observers `PMMainViewController` did.
-
-### Dart API (first cut)
-
-```dart
-class PlatinumapsMapView extends StatelessWidget {
-  const PlatinumapsMapView({
-    super.key,
-    required this.mapSlug,
-    this.queryParams,
-    this.locale,
-    this.appStoreId,
-    this.userId,
-    this.secretKey,
-    this.offsetBottom = 0,
-    this.coverImage,
-    this.beacon,
-    this.launchUrl,
-    this.onOpenLink,
-  });
-
-  /// The map identifier appended to https://platinumaps.jp/maps/.
-  /// May include a sub-path (e.g. "demo/sr999"). Serialized as
-  /// `mapSlug` on iOS and `mapPath` on Android (the two native SDKs
-  /// disagree on the name; see §8).
-  final String mapSlug;
-
-  final Map<String, String>? queryParams;
-  final PlatinumapsLocale? locale;
-  final String? appStoreId;
-  final String? userId;
-  final String? secretKey;
-  final int offsetBottom;
-
-  /// iOS-only. The existing iOS SDK draws this image on top of the
-  /// WebView until `web.ready` fires. The Android SDK has no
-  /// equivalent today; passing a value on Android is silently
-  /// ignored. See §8 for the cross-platform parity question.
-  final ImageProvider? coverImage;
-
-  final PlatinumapsBeaconOptions? beacon;
-
-  /// Initial deep-link URL the host captured from a Universal Link or
-  /// Custom URL Scheme. The web layer consumes it once it is ready.
-  /// Runtime pushes (the equivalent of iOS `pushLaunchURL`) are not
-  /// supported in v1; rebuild the widget with a new `launchUrl` to
-  /// retrigger.
-  final Uri? launchUrl;
-
-  final void Function(Uri url, {required bool sharedCookie})? onOpenLink;
-}
-
-class PlatinumapsBeaconOptions {
-  const PlatinumapsBeaconOptions({
-    required this.uuid,
-    this.minSample,
-    this.maxHistory,
-    this.memo,
-  });
-  final String uuid;
-  final int? minSample;
-  final int? maxHistory;
-  final String? memo;
-}
-
-/// Wire values match the `culture` query parameter the web app expects.
-/// Kept in sync with iOS `PMLocale` (see iOS/platinumaps-sdk/Types/PMLocale.swift).
-enum PlatinumapsLocale {
-  ja,    // "ja"
-  en,    // "en"
-  zhHans, // "zh-cn"
-  zhHant, // "zh-tw"
-  ko,    // "ko"
-  fr,    // "fr"
-  es,    // "es"
-  vi,    // "vi"
-  id,    // "id"
-  my,    // "my"
-  th,    // "th"
-}
-```
-
-`onOpenLink` mirrors `PMMainViewControllerDelegate.openLink`. Other
-customer-facing hooks are deliberately omitted (see Non-goals §1).
-The iOS `isWebViewInspectable` flag is intentionally not surfaced in
-v1; Android already gates the WebView inspector on `BuildConfig.DEBUG`
-automatically, and uniform debug-only behaviour is acceptable for the
-first release.
-
-### Distribution
+## 4. Distribution
 
 In-repo development uses relative paths from
 `Flutter/platinumaps_flutter_sdk/` to the existing
 `Android/platinumaps-sdk/` Kotlin sources and `iOS/platinumaps-sdk/`
 Swift sources. That arrangement does **not** survive `dart pub
-publish`: only the contents of `Flutter/platinumaps_flutter_sdk/`
-are uploaded, so consumers downloading the package from pub.dev see
-no `Android/` or `iOS/` next to their copy.
+publish`: only the contents of `Flutter/platinumaps_flutter_sdk/` are
+uploaded.
 
-The published package therefore needs to carry the native SDK code
-itself. Three options were considered:
+The choice was between bundling sources at publish time, bundling
+prebuilt artifacts (AAR / xcframework), and depending on external
+artifact repositories (Maven Central / a separate CocoaPod).
+**Bundling sources won** — flatdir AAR consumption did not survive
+through Flutter host projects, and external repositories tie release
+cadences across artifacts that today live in one repo.
 
-| Option | Android | iOS | Trade-off |
-|--------|---------|-----|-----------|
-| **Bundle sources at publish time** ✅ | Copy `Android/platinumaps-sdk` Kotlin sources into `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/...` as part of the publish workflow | Copy the iOS Swift sources into `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Sources/PlatinumapsSDK/` (replacing the dev-time symlink) | Largest published artifact; in-repo and on-pub.dev layouts diverge; publish workflow must enforce parity |
-| Bundle prebuilt artifacts | Drop `platinumaps-sdk-release.aar` into `android/libs/` and reference it as a flat-dir Gradle dependency | Vendor a prebuilt `xcframework` and reference it from the podspec | No source on pub.dev (harder to debug for consumers); has to be rebuilt for each release |
-| External artifact repositories | Publish the AAR to Maven Central (or a private Maven repo) and depend on it as a normal Gradle coordinate | Publish a separate CocoaPod, or rely on the existing Swift Package via a podspec that bridges to SPM | Cleanest separation; requires standing up and maintaining the publishing pipeline; ties release cadences across two artifacts |
+In-repo wiring:
 
-**Decision: "Bundle sources at publish time" (Option 1).** This was
-adopted while wiring up the Flutter example app — vendoring the AAR
-with `flatDir` did not survive consumption from a Flutter host
-project (Gradle's flat-dir repositories are not transitively
-visible). Bundling sources keeps a single in-repo source of truth
-(developers continue to edit `Android/platinumaps-sdk/` and
-`iOS/platinumaps-sdk/` directly) and avoids the AAR-staleness risk
-described elsewhere in this document.
-
-In-repo wiring (now in place):
-
-- **Android:** `Flutter/platinumaps_flutter_sdk/android/build.gradle`
-  adds `../../../Android/platinumaps-sdk/src/main/java` to the
-  plugin's `main.java.srcDirs` and
-  `../../../Android/platinumaps-sdk/src/main/res` to
+- **Android** — `android/build.gradle` adds
+  `../../../Android/platinumaps-sdk/src/main/java` to the plugin's
+  `main.java.srcDirs` and the matching `res` directory to
   `main.res.srcDirs`. The Android `namespace` is set to
   `jp.co.boldright.platinumaps.sdk` so the generated `R` /
-  `BuildConfig` classes appear in the package the vendored sources
-  expect; the Flutter plugin glue continues to live in
-  `jp.co.boldright.platinumaps.flutter` (the package declared in
-  `pubspec.yaml`). `buildFeatures.buildConfig` is set to `true`
-  because the SDK reads `BuildConfig.DEBUG`.
-- **iOS (SwiftPM):** the package at
-  `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/Package.swift`
-  exposes a single target whose `Sources/PlatinumapsSDK/` is a
-  symlink to `../../../../../iOS/platinumaps-sdk/`. SwiftPM target
-  paths must stay inside the package root, hence the symlink rather
-  than an outside-the-package `path:`.
-- **iOS (CocoaPods):** the podspec at
-  `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk.podspec`
-  globs `platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/**/*.swift`
-  and `../../../iOS/platinumaps-sdk/**/*.swift` and compiles them as
-  one module. Both managers therefore read the same sources.
+  `BuildConfig` classes appear where the vendored sources expect them
+  (the Flutter plugin glue itself lives in
+  `jp.co.boldright.platinumaps.flutter`). `buildFeatures.buildConfig`
+  is `true` because the SDK reads `BuildConfig.DEBUG`.
+- **iOS (SwiftPM)** — `Sources/PlatinumapsSDK/` is a symlink to
+  `../../../../../iOS/platinumaps-sdk/`. SwiftPM target paths must
+  stay inside the package root, hence the symlink rather than an
+  outside-the-package `path:`.
+- **iOS (CocoaPods)** — the podspec globs the same Swift sources
+  through a relative `../../../iOS/platinumaps-sdk/**/*.swift` so
+  both managers compile the same files.
 
-Publish workflow (deferred to step 8, before the first pub.dev
-publish):
+Publish workflow — `scripts/prepublish.py`:
 
-- Copy `Android/platinumaps-sdk/src/main/java/**` →
-  `Flutter/platinumaps_flutter_sdk/android/src/main/kotlin/jp/co/boldright/platinumaps/sdk/`
-- Copy `Android/platinumaps-sdk/src/main/res/**` →
-  `Flutter/platinumaps_flutter_sdk/android/src/main/res/`
-- Replace the `Sources/PlatinumapsSDK` symlink with a real copy of
-  `iOS/platinumaps-sdk/**`
-- Drop the `srcDirs` overrides in `build.gradle` and the
-  `../../../iOS/platinumaps-sdk` glob in the podspec
-- Verify byte-identity between source and copy in CI
+- Copies the Kotlin sources into the plugin's `android/src/main/kotlin/`.
+- Copies the iOS sources into `Sources/PlatinumapsSDK/` (replacing the
+  symlink).
+- Drops the `srcDirs` overrides in `build.gradle` and the
+  `../../../iOS/platinumaps-sdk` glob in the podspec.
+- The CI `publish-dry-run` job exercises the snapshot end-to-end on
+  every push.
 
-## 6. PlatformView composition checks
+## 5. PlatformView composition decisions
 
 PlatformView lets the Flutter host stack widgets on top of the native
-WebView, which is one of the main reasons to ship a Flutter SDK at all.
-Three composition cases must be verified before v1 lands; none are
-expected to be blockers but each deserves an explicit check:
+WebView. Three composition cases were considered:
 
-1. **Cover image vs Flutter splash.** The native SDK draws its own
-   cover image on top of the WebView until `web.ready`. A Flutter host
-   that places its own splash widget over the map will need a clear
-   rule for which one wins. Document the existing native cover image
-   as authoritative; the host may pass `coverImage: null` and own the
-   splash entirely.
+1. **Cover image vs Flutter splash.** The iOS native SDK draws a
+   cover image on top of the WebView until `web.ready`. The Flutter
+   SDK deliberately does *not* surface that knob — drive the splash
+   from the Flutter host instead (compose a widget above the map in a
+   `Stack`, or defer mounting until the host splash finishes). The
+   host has access to richer Flutter primitives than a single
+   `ImageProvider` would provide, and the `web.ready` signal that the
+   native cover image relies on is not surfaced to Dart.
 2. **Native modals.** `UIAlertController` (iOS) and the file-chooser
    `Intent` (Android) present above everything, including Flutter
    overlays. This is the desired behaviour for permission prompts and
    needs no special handling.
-3. **Gesture conflicts.** Flutter widgets placed in a `Stack` above the
-   PlatformView must not steal touches intended for the map. The
-   recommended pattern is `IgnorePointer` on full-bleed decorations and
-   explicit gesture detectors only on UI elements that need them. Call
-   this out in `Flutter/README.md`.
+3. **Gesture conflicts.** Flutter widgets placed in a `Stack` above
+   the PlatformView must not steal touches intended for the map. Use
+   `IgnorePointer` on full-bleed decorations and explicit gesture
+   detectors only on UI elements that need them. The example app
+   demonstrates the pattern.
 
-## 7. Verification & release criteria
-
-The SDK is considered complete when an external Flutter developer can
-install it from pub.dev, follow `Flutter/README.md`, and have a working
-embedded map in their app on both supported platforms. Reaching that
-bar requires several layers of verification beyond "the sample app
-runs".
-
-### Test pyramid
+## 6. Testing & CI
 
 | Layer | Scope | Tooling |
 |-------|-------|---------|
-| Dart unit tests (`test/`) | Pure-Dart logic: options serialization, URL building, public API contracts, callback dispatch with a mocked platform channel | `flutter test` |
-| Native plugin unit tests | The thin plugin glue layer only (PlatformViewFactory creation arguments, MethodChannel routing). Existing iOS/Android SDK modules retain their own test posture independently. | Android: JUnit / Robolectric. iOS: XCTest |
-| Integration tests (`integration_test/`) | End-to-end behaviour from the example app: WebView reaches `web.ready`, `onOpenLink` fires for whitelisted schemes, beacon configuration round-trips correctly through the bridge. | `flutter test integration_test` driven from the example app, runnable on emulators / simulators in CI and on physical devices for sensor-dependent checks |
-| Manual smoke checks | Hardware-only flows that CI cannot exercise reliably: GPS fix on a moving device, iBeacon ranging against real hardware, camera-backed file chooser. | Physical iOS + Android devices, captured in a release checklist |
+| Dart unit tests (`test/`) | Pure-Dart logic: options serialization, public API contracts | `flutter test` |
+| Native plugin unit tests | Thin plugin glue only (factory creation arguments, MethodChannel routing). The bundled iOS/Android SDK modules retain their own test posture independently. | Android JUnit, iOS XCTest |
+| Integration tests (`integration_test/`) | End-to-end behaviour from the example app | `flutter test integration_test` |
+| Manual smoke checks | Hardware-only flows CI cannot exercise: GPS fix on a moving device, iBeacon ranging, camera-backed file chooser | Physical iOS / Android devices |
 
-Test coverage is reported per pull request but **no numerical gate is
-enforced** — coverage is a signal, not the goal. The integration tests
-are the primary safety net.
+Test coverage is reported per PR but no numerical gate is enforced —
+the integration tests are the primary safety net.
 
-### Example app (`Flutter/example/`)
+CI (`.github/workflows/flutter-sdk-ci.yml`) enforces, on every push:
 
-The example app is both the user-facing reference integration and the
-host for `integration_test`. It must:
+- `dart format`, `flutter analyze`, and `flutter test` across Flutter
+  stable & beta on Linux.
+- The Android plugin's JUnit suite.
+- The iOS plugin's XCTest cases on macOS.
+- `pana` (category-level, not absolute score).
+- `dart pub publish --dry-run` against `scripts/prepublish.py`'s
+  snapshot.
+- An i18n drift check that re-runs `scripts/generate-strings.py` and
+  fails if the regenerated files differ from what's committed.
 
-- Demonstrate every public API on `PlatinumapsMapView`, including
-  `onOpenLink`, beacon configuration, cover image, and a Flutter
-  widget overlaid above the map.
-- Build for iOS and Android out of the box with `flutter run` against
-  the example directory.
-- Be the only sample integration we ship; we do not maintain separate
-  per-feature samples.
+## 7. Decisions
 
-### Static analysis & continuous integration
+Settled choices recorded so future contributors do not need to
+re-derive the rationale.
 
-- `flutter analyze` and `dart format --output=none
-  --set-exit-if-changed` must pass with zero warnings on every PR.
-- A `pana` run is part of CI. The target is the highest pub.dev tier
-  for each scoring category that pana exposes (documentation,
-  platform support, conventions, static analysis, dependencies,
-  support). Numerical caps shift with pana releases; we track the
-  category-level result rather than an absolute score.
-- CI matrix: Flutter stable + current beta; iOS 16 and the current
-  iOS release; Android API 24 (minimum supported) and the current
-  stable API. Adding a new minimum-supported version triggers a
-  changelog entry.
+- **Beacon configuration timing.** `PlatinumapsBeaconOptions` is
+  passed through `creationParams` only; mutating Dart state after
+  the widget is built has no effect until the widget rebuilds with a
+  fresh key. Mirrors the native SDKs, which take beacon options at
+  `openPlatinumaps` time and treat them as immutable.
+- **CocoaPods vs SwiftPM.** Ship both, sharing the same Swift
+  sources, so the plugin works regardless of which iOS dependency
+  manager the host project uses.
+- **Coverage of native packaging for pub.dev.** Bundle sources at
+  publish time (see §4) — chosen over prebuilt AAR / xcframework or
+  separate Maven / CocoaPods publishing pipelines.
+- **`coverImage` parity.** The Flutter SDK does not expose
+  `coverImage`. The Flutter host is better positioned to drive a
+  splash (see §5 #1). If concrete demand emerges, add it as a named
+  constructor parameter — backwards compatible.
+- **Naming alignment.** The native-SDK names stay as-is (iOS
+  `mapSlug` / Android `mapPath`; iOS `mapQuery` / Android
+  `queryParams`); the plugin glue translates. Renaming public
+  surfaces in the native SDKs would break every existing native-iOS
+  / native-Android integrator for marginal Dart-side benefit.
+- **`PlatinumapsLocale` wire format.** The Dart enum's `code`
+  strings match the iOS `PMLocale` raw values one-for-one (eleven
+  entries: `ja`, `en`, `zh-cn`, `zh-tw`, `ko`, `fr`, `es`, `vi`,
+  `id`, `my`, `th`); the Android plugin glue folds the same string
+  into the `culture` query parameter.
+- **Permission acquisition responsibility.** Inherit the native
+  SDKs' behaviour unchanged. The Flutter plugin does no permission
+  work itself; hosts declare the relevant `Info.plist` keys and
+  `AndroidManifest.xml` permissions, with no `permission_handler`
+  dependency required.
+- **`isWebViewInspectable` exposure.** v1 omits it from the Dart
+  API; debug-only behaviour (Android already gates on
+  `BuildConfig.DEBUG`) is sufficient. Reopen if customers ask for
+  release-build debugging.
 
-### Documentation
+## 8. Open / future
 
-- `Flutter/README.md` — integration guide structured like the existing
-  iOS / Android READMEs (install, minimum versions, required
-  permissions, lifecycle contract, minimal usage example, FAQ).
-- Public Dart API carries dartdoc comments. `dart doc` produces clean
-  output with no broken references.
-- `CHANGELOG.md` at the package root follows the
-  [Keep a Changelog](https://keepachangelog.com) format and is updated
-  in the same PR that introduces a user-visible change.
-
-### Release readiness checklist
-
-Before the first publish, all of the following must hold:
-
-- [ ] Unit + integration test suites green on CI for the supported
-      matrix.
-- [ ] `flutter analyze` clean; `pana` score at target tier.
-- [ ] Manual smoke checks for sensor-dependent flows recorded against
-      the release candidate.
-- [ ] All public APIs documented; `dart doc` produces no warnings.
-- [ ] `Flutter/README.md` integration walkthrough has been followed
-      end-to-end by someone who did not write the SDK.
-- [ ] `CHANGELOG.md`, `pubspec.yaml` version, and the package
-      `LICENSE` are up to date.
-- [ ] The example app builds and runs on iOS and Android against the
-      release candidate.
-
-### Versioning & distribution
-
-The package follows semantic versioning. The bridge protocol's
-user-agent suffix (`Platinumaps/2.0.0`, see CLAUDE.md §Versioning) is
-**not** the package's version — the Flutter SDK's `pubspec.yaml`
-version tracks the package itself and starts at `0.1.0` while the
-public API is still considered unstable. The package is published to
-pub.dev once the readiness checklist passes; pre-1.0 versions may
-introduce breaking changes with a clear CHANGELOG entry.
-
-## 8. Open questions
-
-1. **`PMMapView` lifecycle granularity.** `didMoveToWindow` fires every
-   time the view re-enters a window hierarchy, not only on first
-   attach. *Resolved:* the first-attach latch (`isFirstAttach`) is
-   set to `false` inside `didMoveToWindow` on the first call where
-   `window != nil`, and every subsequent invocation is short-circuited,
-   so the setup runs exactly once. Confirmed by code review.
-2. **Beacon configuration timing.** The native SDK accepts beacon
-   options at `openPlatinumaps` time and treats them as immutable for
-   the WebView's lifetime. *Decision:* the Dart API passes beacon
-   options through `creationParams` only, so changing
-   `PlatinumapsBeaconOptions` after the widget is built has no effect
-   unless the host rebuilds the widget with a fresh `key`. This is
-   documented inline on the `PlatinumapsMapView` class doc.
-3. **CocoaPods vs Swift Package Manager.** Flutter iOS plugins
-   historically ship as podspecs, but `flutter analyze` now warns
-   that lack of SwiftPM support will become an error. *Decision:*
-   ship both a Swift Package and a podspec, sharing the same sources
-   so the plugin works regardless of which pod manager the host
-   project uses. Implementation tracked as part of roadmap step 5.
-4. **Native SDK packaging for pub.dev.** ✅ *Resolved:* Option 1
-   (bundle sources at publish time), see §5 *Distribution*. In-repo
-   wiring is now in place; the publish-time copy step is tracked as
-   part of step 8.
-5. **Cover image parity.** *Decision (v0.1):* freeze
-   `PlatinumapsMapView.coverImage` as iOS-only in the Dart API and
-   document the asymmetry; do not add Android coverage in v0.1.
-   Re-evaluate post-launch once concrete demand is known.
-6. **Naming alignment between iOS and Android.** *Decision:* leave
-   the native-SDK names as-is (iOS `mapSlug` / Android `mapPath`,
-   iOS `mapQuery` / Android `queryParams`) and translate at the
-   plugin-glue layer. Renaming public surfaces in the native SDKs
-   would break every existing native-iOS / native-Android integrator
-   for marginal Dart-side benefit.
-7. **`PlatinumapsLocale` wire format.** The enum values map to
-   web-app `culture` strings (`"ja"`, `"zh-cn"`, …). *Verification
-   pending; tracked as part of the cross-platform code review.*
-8. **Permission acquisition responsibility.** *Decision:* inherit
-   the native SDKs' behaviour unchanged. The Flutter plugin does no
-   permission work itself; hosts declare the relevant `Info.plist`
-   keys (`NSLocationWhenInUseUsageDescription` etc.) and
-   `AndroidManifest.xml` permissions (`ACCESS_FINE_LOCATION` etc.)
-   exactly as documented in `iOS/README.md` / `Android/README.md`,
-   with no `permission_handler` dependency required.
-9. **`isWebViewInspectable` exposure.** *Decision:* v1 omits it from
-   the Dart API; debug-only behaviour (Android already gates on
-   `BuildConfig.DEBUG`) is sufficient. Reopen if customers ask for
-   release-build debugging.
-
-## 9. Roadmap
-
-| Step | Description | Gate | Status |
-|------|-------------|------|--------|
-| 0 | Design review of this document; open questions in §8 closed or explicitly deferred | Sign-off recorded in the reviewing thread | ✅ done |
-| 1a | Refactor iOS SDK: extract `PMMapView`, shrink `PMMainViewController` to a forwarding wrapper | Existing iOS sample integration passes a manual smoke test against unchanged `iOS/README.md` instructions | ✅ done — `xcodebuild` against the SDK is clean and a README-shaped consumer package compiles cleanly |
-| 1b | Android side of plugin scaffolding (`Flutter/android/` Gradle project, `PlatformViewFactory` wrapping `PmWebView`, Dart skeleton) | Plugin builds; example app launches an empty `PlatinumapsMapView` on Android | ✅ done — `flutter build apk --debug` on the example app succeeds; the plugin now bundles the SDK sources directly (see §5) |
-| 2 | iOS side of plugin scaffolding wired to the refactored `PMMapView` | Example app launches an empty `PlatinumapsMapView` on iOS | ✅ done — plugin glue in place, SwiftPM and CocoaPods support both wired (DESIGN §8 #3 resolved). CI builds the example for the iOS Simulator (`flutter build ios --simulator --debug --no-codesign`) and runs the RunnerTests XCTest target on macOS. |
-| 3 | Wire configuration, cover image, `onOpenLink` callback through to both platforms | Example app loads a real map slug end-to-end on both platforms | 🟡 `mapSlug`, `queryParams`, `locale` (folded into `culture` on Android), `beacon`, and `onOpenLink` are plumbed end-to-end. `appStoreId`, `userId`, `secretKey`, `offsetBottom`, `coverImage`, and `launchUrl` remain iOS-only by design (§8 #5); the README documents the asymmetry. |
-| 4 | Activity lifecycle forwarding (Android) and `ActivityAware` plumbing | Background / foreground / destroy cycle verified | ✅ done — `ActivityAware` wired and exercised by the example app build |
-| 5 | PlatformView composition checks (§6) and `Flutter/README.md` | All three cases documented with working snippets | ✅ §6 cases #2 (native modals on top of Flutter overlays) and #3 (gesture passthrough via `IgnorePointer`) verified on the iOS Simulator with the example app — the iOS location-permission alert renders above the PMMapView's WebView, and the example's "last opened" banner overlays the WebView while letting taps fall through to the map. Case #1 (cover image vs Flutter splash) stays a documentation-only contract: `coverImage` is not yet wired Dart→native, per §8 #5. |
-| 6 | Test suite: Dart unit tests + native plugin-glue tests + `integration_test` driven from the example app | Tests green on CI matrix (§7) | ✅ All three test layers in place plus a GitHub Actions workflow at `.github/workflows/flutter-sdk-ci.yml`. The workflow runs `flutter analyze` + `dart format` + `flutter test` across Flutter stable & beta on Linux, the Android plugin JUnit suite, the iOS XCTest cases on macOS, `pana`, `dart pub publish --dry-run` against `scripts/prepublish.py`'s snapshot, and an i18n drift check that re-runs `scripts/generate-strings.py` and fails if the regenerated files differ from what's committed. |
-| 7 | Static analysis + dartdoc + `pana` pass | Zero analyzer warnings; `pana` category targets met (§7) | ✅ `flutter analyze`, `dart format`, and `dart doc` (zero warnings) all clean. `pana` reports 150/160 — full marks on Documentation, Platform support, Static analysis, and Dependencies. The remaining 10 points come from `pana`'s repository-URL verifier, which fetches the `main` branch and only succeeds once the plugin has been merged there; the structural sub-items (README / CHANGELOG / LICENSE) all already pass. |
-| 8 | Release readiness checklist (§7) | All checklist items satisfied; first pub.dev publish | 🟡 publish workflow shipped: `scripts/prepublish.py` produces a self-contained snapshot under `/tmp/`, and `dart pub publish --dry-run` reports zero warnings on it. CI exercises the dry-run on every push. What still gates the first publish: the manual sensor-dependent smoke checks (GPS / iBeacon / camera file chooser) — expected to ride the same TestFlight + Play Console internal-track workflow the boldright iOS app already uses — and an independent end-to-end walkthrough of `README.md` by someone who didn't write the SDK. |
-
-Step 0 is a hard gate: implementation does not start until the design
-review has signed off and the §8 open questions have been resolved or
-explicitly deferred. After step 0, the Android plugin scaffold (1b)
-can run in parallel with the iOS refactor (1a), and steps 4 and 5 can
-overlap.
+- **First pub.dev publish.** The package is publishable
+  (`dart pub publish --dry-run` clean) but blocked on (a) manual
+  sensor-dependent smoke checks (GPS / iBeacon / camera) — expected
+  to ride the existing TestFlight + Play Console internal-track
+  workflow — and (b) an independent end-to-end walkthrough of
+  `README.md` by someone who did not write the SDK.
+- **Imperative controller for runtime pushes.** The iOS native SDK's
+  `pushLaunchURL(_:)` forwards a Universal Link / Custom URL Scheme
+  arriving *after* the map is on screen. The current Dart API only
+  accepts the URL via the `launchUrl` constructor parameter, which
+  requires rebuilding the widget (typically via a `ValueKey`) when
+  the URL changes. A `PlatinumapsMapController`-style handle exposed
+  through a `controller:` constructor parameter is the natural
+  escape hatch; defer until concrete demand is observed.

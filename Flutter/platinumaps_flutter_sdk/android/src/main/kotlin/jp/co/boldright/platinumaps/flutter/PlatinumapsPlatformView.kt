@@ -60,12 +60,11 @@ internal class PlatinumapsPlatformView(
          * app honours an explicit `culture=` override regardless of
          * platform.
          *
-         * `offsetBottom`, `launchUrl`, `userId`, `secretKey`,
-         * `appStoreId`, and `coverImage` are accepted by the Dart API
-         * for forward compatibility but the existing [PmMapOptions]
-         * does not have first-class fields for them on Android. The
-         * Flutter README documents the asymmetry and DESIGN.md §8 #5
-         * tracks the parity backlog.
+         * `offsetBottom`, `launchUrl`, `userId`, `secretKey`, and
+         * `appStoreId` are accepted by the Dart API for forward
+         * compatibility but the existing [PmMapOptions] does not
+         * have first-class fields for them on Android. The Flutter
+         * README documents the asymmetry.
          */
         internal fun buildMapOptions(args: Map<String, Any?>?): PmMapOptions {
             val mapSlug = (args?.get("mapSlug") as? String).orEmpty()

@@ -3,13 +3,9 @@
 #
 # For in-repo development, this podspec vendors the existing iOS SDK
 # source files from `iOS/platinumaps-sdk/` (two directories up) via a
-# relative glob. That arrangement works only when the plugin is
-# consumed from a checkout of the full repository (e.g. `dependencies:
-# platinumaps_flutter_sdk: { git: ... , path: Flutter }` in the host
-# app's pubspec.yaml). It does NOT survive `dart pub publish` — only
-# the `Flutter/` subtree is uploaded, and the relative path breaks.
-# The publish-time packaging decision is tracked as `Flutter/DESIGN.md`
-# §8 question #4.
+# relative glob. The publish workflow (`scripts/prepublish.py`)
+# materializes those sources into the snapshot before uploading to
+# pub.dev so the relative path is no longer needed at install time.
 #
 Pod::Spec.new do |s|
   s.name             = 'platinumaps_flutter_sdk'
@@ -24,10 +20,9 @@ Flutter SDK for embedding the Platinumaps web map in a Flutter app.
   s.source           = { :path => '.' }
   # Both the CocoaPods build (single module: this podspec) and the
   # SwiftPM build (`platinumaps_flutter_sdk/Package.swift`) read the
-  # same Swift sources. The localized permission-alert strings used
-  # to live in `Platinumaps.bundle/` but are now embedded in
-  # `PMLocalizedStrings.swift` so neither build needs a resource
-  # bundle (see DESIGN §5).
+  # same Swift sources. Localized permission-alert strings are
+  # embedded in `PMLocalizedStrings.swift` so neither build ships a
+  # resource bundle.
   s.source_files     = [
     'platinumaps_flutter_sdk/Sources/platinumaps_flutter_sdk/**/*.swift',
     '../../../iOS/platinumaps-sdk/**/*.swift',

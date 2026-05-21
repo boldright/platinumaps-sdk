@@ -9,83 +9,93 @@ and Android SDKs in this repository (`iOS/`, `Android/`); see
 
 ## Requirements
 
-- Flutter 3.32 or later (Dart 3.8+)
+- Flutter 3.32 or later (Dart 3.8 or later — `^3.8.0` in `pubspec.yaml`)
 - iOS 16+
 - Android API 24+ (Android 7.0)
 
-## Installation
+## Quick start
 
-Once published to pub.dev:
+The five blocks below are everything a host application has to change
+to embed the SDK. Add only the permission entries that correspond to
+features your map actually uses.
 
-```yaml
-dependencies:
-  platinumaps_flutter_sdk: ^0.1.0
-```
-
-While the package is in pre-release, depend on it via Git:
+### 1. Dependency — `pubspec.yaml`
 
 ```yaml
 dependencies:
   platinumaps_flutter_sdk:
     git:
       url: https://github.com/boldright/platinumaps-sdk
-      path: Flutter
+      path: Flutter/platinumaps_flutter_sdk
 ```
 
-## Required permissions
+Once published to pub.dev: `platinumaps_flutter_sdk: ^0.1.0`.
 
-The SDK consumes a small set of device capabilities and triggers the
-platform permission prompts itself. The host application must
-declare the underlying entries:
+### 2. iOS deployment target — `ios/Podfile`
 
-Keep only the entries that correspond to features the map you ship
-actually uses — leaving an unused declaration in place is harmless
-but bloats the App Store / Play Console permission disclosure.
+```ruby
+platform :ios, '16.0'
+```
 
-### iOS — `Info.plist`
+The default Flutter template uses iOS 12 or 13; pod resolution fails
+with confusing errors if it stays below 16.
+
+### 3. iOS usage descriptions — `ios/Runner/Info.plist`
 
 ```xml
 <key>NSLocationWhenInUseUsageDescription</key>
 <string>Used to show your position on the map.</string>
-<key>NSBluetoothAlwaysUsageDescription</key>
-<string>Used to detect iBeacons configured by the map operator.</string>
 <key>NSCameraUsageDescription</key>
 <string>Used by the map's camera-backed features.</string>
 <key>NSMicrophoneUsageDescription</key>
 <string>Used when the map records audio.</string>
 ```
 
-`NSMicrophoneUsageDescription` is required even if you only plan to
-use the camera, because iOS surfaces the microphone prompt for any
-`getUserMedia({ video: true })` call the embedded web layer might
-make.
+`NSBluetoothAlwaysUsageDescription` is *not* required: the SDK ranges
+iBeacons through `CLLocationManager`, not `CBCentralManager`.
 
-### Android — `AndroidManifest.xml`
+### 4. Android minimum SDK — `android/app/build.gradle`
+
+```gradle
+android {
+    defaultConfig {
+        minSdk 24
+    }
+}
+```
+
+### 5. Android permissions — `android/app/src/main/AndroidManifest.xml`
 
 ```xml
 <uses-permission android:name="android.permission.INTERNET"/>
 <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
 <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-<uses-permission android:name="android.permission.BLUETOOTH_SCAN"
-    android:usesPermissionFlags="neverForLocation"/>
-<uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+<uses-permission android:name="android.permission.CAMERA"/>
+<uses-permission android:name="android.permission.RECORD_AUDIO"/>
+<!-- Only if you enable iBeacon ranging. -->
+<uses-permission android:name="android.permission.BLUETOOTH_SCAN"/>
 <!-- Legacy bluetooth permissions for API < 31. -->
 <uses-permission android:name="android.permission.BLUETOOTH"
     android:maxSdkVersion="30"/>
 <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
     android:maxSdkVersion="30"/>
-<uses-permission android:name="android.permission.CAMERA"/>
-<uses-permission android:name="android.permission.RECORD_AUDIO"/>
 ```
 
-`example/android/app/src/main/AndroidManifest.xml` is a complete
-reference that you can copy from.
+`BLUETOOTH_CONNECT` is *not* required — the SDK only scans for
+beacons, it does not establish GATT connections.
 
-The bare native Android SDK requires the host activity to forward
-five lifecycle callbacks (`onPause`, `onResume`, `onDestroy`,
-`onRequestPermissionsResult`, `onActivityResult`) into `PmWebView`.
-The Flutter plugin does this forwarding automatically via
-`ActivityAware`, so **the host Flutter app needs no extra plumbing**.
+### Troubleshooting
+
+- **`Module 'platinumaps_flutter_sdk' not found` on iOS.** Flutter
+  caches its SwiftPM-generated artifacts; bumping the SDK or the
+  iOS deployment target sometimes leaves stale caches behind. Run
+  `flutter clean && flutter pub get` and rebuild.
+- **Activity lifecycle / permission callbacks.** The bare native
+  Android SDK requires the host activity to forward five callbacks
+  (`onPause`, `onResume`, `onDestroy`, `onRequestPermissionsResult`,
+  `onActivityResult`) into `PmWebView`. The Flutter plugin does this
+  forwarding automatically via `ActivityAware` — the host Flutter
+  app needs no extra plumbing.
 
 ## Usage
 
@@ -106,7 +116,7 @@ class MapScreen extends StatelessWidget {
           beacon: const PlatinumapsBeaconOptions(
             uuid: '00000000-0000-0000-0000-000000000000',
           ),
-          onOpenLink: (url, {required sharedCookie}) {
+          onOpenLink: (Uri url, {required bool sharedCookie}) {
             // Hand the link off to the host's preferred browser.
           },
         ),
@@ -133,23 +143,62 @@ the map.
 | `userId` | Opaque user identifier exposed to the web layer | ✓ | — |
 | `secretKey` | Opaque shared secret exposed to the web layer | ✓ | — |
 | `offsetBottom` | Reports a zeroed bottom safe-area inset to the web | ✓ | — |
-| `coverImage` | Splash image shown until `web.ready` | — | — |
 | `beacon` | iBeacon ranging configuration | ✓ | ✓ |
 | `launchUrl` | Deep link forwarded to the web layer at first load | ✓ | — |
 
 Fields marked `—` are accepted by the Dart API for forward
-compatibility but currently ignored on that platform. `coverImage`
-is dropped on both platforms in v0.1; render a Flutter splash widget
-above the map in a `Stack` until the parity work in `DESIGN.md`
-§8 #5 lands. The cross-platform parity backlog tracks the rest.
+compatibility but currently ignored on that platform.
+
+The iOS native SDK exposes a `coverImage` (splash) API. The Flutter
+SDK deliberately does not — drive the splash from the Flutter host:
+compose your splash widget above the map in a `Stack`, or delay
+mounting `PlatinumapsMapView` until your host-side splash finishes.
+
+### Updating configuration at runtime
+
+Every field except `onOpenLink` is forwarded to the native side once,
+at PlatformView creation. Mutating Dart state (e.g. switching `locale`
+in a settings screen) **does not** restart the WebView with the new
+value — the existing PlatformView keeps the configuration it was
+constructed with.
+
+The idiomatic Flutter pattern is to drive a rebuild from a key:
+
+```dart
+PlatinumapsMapView(
+  key: ValueKey('$mapSlug|${locale?.code}|${beacon?.uuid}'),
+  mapSlug: mapSlug,
+  locale: locale,
+  beacon: beacon,
+  ...
+)
+```
+
+When any of the keyed inputs change, Flutter discards the old
+PlatformView and constructs a new one, picking up the new
+configuration. `onOpenLink` is the one exception: its closure is
+re-read on every method-channel callback, so swapping handlers does
+not require a rebuild.
+
+## Known limitations
+
+- **No runtime `launchUrl` push.** The iOS native SDK exposes
+  `pushLaunchURL(_:)` for forwarding a Universal Link or Custom URL
+  Scheme that arrives *after* the map is on screen. The Flutter SDK
+  does not surface that yet — rebuild the widget with a new
+  `launchUrl` (and a fresh key) to trigger the same flow. A
+  `PlatinumapsMapController` handle is on the v1.0 wishlist.
+- **No bidirectional bridge.** The Dart side cannot send arbitrary
+  `command://` calls into the WebView; only the configuration knobs
+  listed above are forwarded.
 
 ## Sample app
 
-A runnable sample lives at [`example/`](example/). It mounts a
+A runnable sample lives at [`example/`](../example/). It mounts a
 `PlatinumapsMapView` against the public demo map, wires `onOpenLink`
 through `url_launcher`, and stacks a small Flutter overlay above the
-PlatformView so the gesture-passthrough composition case from
-DESIGN.md §6 is exercised end-to-end.
+PlatformView so the gesture-passthrough composition case is exercised
+end-to-end.
 
 ## Reporting issues
 

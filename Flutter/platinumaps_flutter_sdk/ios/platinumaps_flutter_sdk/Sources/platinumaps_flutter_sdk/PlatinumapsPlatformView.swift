@@ -67,21 +67,11 @@ final class PlatinumapsPlatformView: NSObject, FlutterPlatformView, PMMapViewDel
     /// `PMMapView`'s public properties. Pulled out of `init` so unit
     /// tests can exercise the field-by-field translation directly,
     /// without standing up a `FlutterMethodChannel`.
-    ///
-    /// `coverImage` is intentionally not handled. The Dart side
-    /// declines to serialize `ImageProvider` across the platform
-    /// channel — no key is emitted by `_creationParams` — so the
-    /// argument never reaches this method in v0.1. The parameter is
-    /// kept on the Dart public API for forward compatibility;
-    /// `Flutter/DESIGN.md` §8 #5 tracks the parity follow-up that
-    /// will plumb it through.
     @MainActor
     internal static func applyCreationArguments(
         _ args: [String: Any]?,
         to mapView: PMMapView
     ) {
-        // The Dart side sends `mapSlug` because that name matches the
-        // existing iOS SDK; the Android side maps it to `mapPath`.
         mapView.mapSlug = args?["mapSlug"] as? String
 
         if let queryParams = args?["queryParams"] as? [String: String] {

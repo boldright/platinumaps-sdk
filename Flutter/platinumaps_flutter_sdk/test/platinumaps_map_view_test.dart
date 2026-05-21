@@ -11,7 +11,6 @@ void main() {
       expect(widget.appStoreId, isNull);
       expect(widget.userId, isNull);
       expect(widget.secretKey, isNull);
-      expect(widget.coverImage, isNull);
       expect(widget.beacon, isNull);
       expect(widget.launchUrl, isNull);
       expect(widget.onOpenLink, isNull);
