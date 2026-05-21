@@ -126,7 +126,7 @@ final class PlatinumapsPlatformView: NSObject, FlutterPlatformView, PMMapViewDel
             mapView.mapQuery = extras
         }
         if let launchUrlString = args?["launchUrl"] as? String,
-           let launchUrl = URL(string: launchUrlString),
+           let launchUrl = Self.parseLaunchUrl(launchUrlString),
            Self.allowedLaunchUrlSchemes.contains(launchUrl.scheme?.lowercased() ?? "") {
             // The web layer eventually echoes `launchUrl` back through
             // its own command flow, so the Flutter host can stage a
@@ -141,6 +141,21 @@ final class PlatinumapsPlatformView: NSObject, FlutterPlatformView, PMMapViewDel
 
     func view() -> UIView {
         return mapView
+    }
+
+    /// Parse a `launchUrl` string into a `URL`.
+    ///
+    /// On iOS 17+ the default `URL(string:)` silently percent-encodes
+    /// invalid characters, which can turn a malformed Dart-side string
+    /// into a "valid" URL. The `encodingInvalidCharacters: false`
+    /// overload (also iOS 17+) refuses the input instead — which is
+    /// what we want, since the Dart side already typed the value as
+    /// `Uri`. On iOS 16 we fall back to the older, lenient behaviour.
+    private static func parseLaunchUrl(_ string: String) -> URL? {
+        if #available(iOS 17.0, *) {
+            return URL(string: string, encodingInvalidCharacters: false)
+        }
+        return URL(string: string)
     }
 
     // MARK: - PMMapViewDelegate

@@ -103,9 +103,11 @@ class PlatinumapsFlutterPlugin : FlutterPlugin, ActivityAware {
 
         // `ActivityPluginBinding.lifecycle` returns Flutter's
         // `HiddenLifecycleReference`, which wraps the host Activity's
-        // androidx.lifecycle.Lifecycle. The older
-        // `FlutterLifecycleAdapter` helper was removed in newer
-        // Flutter engines, so we unwrap the reference directly.
+        // androidx.lifecycle.Lifecycle. The `FlutterLifecycleAdapter`
+        // helper isn't shipped in the current Flutter Android engine
+        // artifact (only `HiddenLifecycleReference.class` is present
+        // under `io/flutter/embedding/engine/plugins/lifecycle/`), so
+        // we unwrap the reference directly here.
         val lc = (binding.lifecycle as HiddenLifecycleReference).lifecycle
         lc.addObserver(lifecycleObserver)
         lifecycle = lc

@@ -13,7 +13,9 @@ class _ExampleApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Platinumaps Flutter example',
-      theme: ThemeData(useMaterial3: true),
+      // Material 3 is the default since Flutter 3.16, so we don't pass
+      // `useMaterial3: true` explicitly.
+      theme: ThemeData(),
       home: const _ExampleHome(),
     );
   }
