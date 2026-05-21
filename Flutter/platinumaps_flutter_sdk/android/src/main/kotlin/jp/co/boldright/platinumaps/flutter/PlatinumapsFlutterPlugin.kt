@@ -6,7 +6,7 @@ import androidx.lifecycle.LifecycleOwner
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
-import io.flutter.embedding.engine.plugins.lifecycle.FlutterLifecycleAdapter
+import io.flutter.embedding.engine.plugins.lifecycle.HiddenLifecycleReference
 import jp.co.boldright.platinumaps.sdk.PmWebView
 
 /**
@@ -101,7 +101,12 @@ class PlatinumapsFlutterPlugin : FlutterPlugin, ActivityAware {
         binding.addRequestPermissionsResultListener(permissionsListener)
         binding.addActivityResultListener(activityResultListener)
 
-        val lc = FlutterLifecycleAdapter.getActivityLifecycle(binding)
+        // `ActivityPluginBinding.lifecycle` returns Flutter's
+        // `HiddenLifecycleReference`, which wraps the host Activity's
+        // androidx.lifecycle.Lifecycle. The older
+        // `FlutterLifecycleAdapter` helper was removed in newer
+        // Flutter engines, so we unwrap the reference directly.
+        val lc = (binding.lifecycle as HiddenLifecycleReference).lifecycle
         lc.addObserver(lifecycleObserver)
         lifecycle = lc
     }
