@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.view.View
 import io.flutter.plugin.common.BinaryMessenger
+import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.platform.PlatformView
 import jp.co.boldright.platinumaps.sdk.PmMapBeaconOptions
@@ -41,10 +42,46 @@ internal class PlatinumapsPlatformView(
         if (args?.get("hasOpenLinkHandler") as? Boolean == true) {
             webView.onOpenLinkListener = this
         }
+        methodChannel.setMethodCallHandler { call, result -> handle(call, result) }
         webView.openPlatinumaps(buildMapOptions(args))
     }
 
+    /** Dart → native invocations coming from `PlatinumapsMapController`. */
+    private fun handle(call: MethodCall, result: MethodChannel.Result) {
+        when (call.method) {
+            "pushLaunchUrl" -> {
+                val urlString = call.argument<String>("url")
+                if (urlString == null) {
+                    result.error("invalid_arguments", "pushLaunchUrl requires a `url`", null)
+                    return
+                }
+                val uri = runCatching { Uri.parse(urlString) }.getOrNull()
+                val scheme = uri?.scheme?.lowercase()
+                if (uri == null || scheme == null || scheme !in allowedLaunchUrlSchemes) {
+                    result.error(
+                        "invalid_arguments",
+                        "pushLaunchUrl requires a `url` with an allowlisted scheme",
+                        null,
+                    )
+                    return
+                }
+                webView.pushLaunchURL(uri)
+                result.success(null)
+            }
+            else -> result.notImplemented()
+        }
+    }
+
     companion object {
+        /**
+         * URL schemes the plugin will forward to
+         * `PmWebView.pushLaunchURL`. Matches the native SDK's
+         * `browseAllowedSchemes` and the iOS plugin glue's allowlist.
+         */
+        private val allowedLaunchUrlSchemes: Set<String> = setOf(
+            "http", "https", "tel", "mailto", "sms", "geo",
+        )
+
         /**
          * Translates the creation arguments the Dart side sends through
          * the platform channel into a [PmMapOptions] the native SDK

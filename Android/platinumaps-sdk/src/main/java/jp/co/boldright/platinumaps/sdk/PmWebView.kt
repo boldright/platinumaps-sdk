@@ -103,6 +103,7 @@ class PmWebView @JvmOverloads constructor(
         APP_INFO("app.info"),
         APP_DETECT("app.detect"),
         APP_REVIEW("app.review"),
+        APP_LINK("app.link"),
         MAP_NAVIGATE("map.navigate"),
 
         WEB_FILE_CHOOSER("web.filechooser"),
@@ -788,6 +789,14 @@ class PmWebView @JvmOverloads constructor(
         val requestId = commandUri.getQueryParameter("requestId")
         requestId ?: return 1u
         when (command) {
+            PMCommand.APP_LINK -> {
+                // Outbound only: the SDK pushes this command via
+                // `commandPush(APP_LINK, …)` from `pushLaunchURL`.
+                // The web layer never issues a `command://app.link`
+                // navigation, so reaching here is a no-op.
+                return 0u
+            }
+
             PMCommand.APP_INFO -> {
                 val args = mutableMapOf<String, String>()
                 userId?.let {
@@ -950,6 +959,28 @@ class PmWebView @JvmOverloads constructor(
         val argsJson = JSONObject(args).toString()
         val callback = "commandCallback(${JSONObject.quote(command.rawValue)},${JSONObject.quote(requestId)},$argsJson)"
         evaluateJavascript(callback) { _ -> }
+    }
+
+    /** Sends an unsolicited command to the web side (no requestId). */
+    private fun commandPush(command: PMCommand, args: Map<String, Any>) {
+        val argsJson = JSONObject(args).toString()
+        val script = "commandPush(${JSONObject.quote(command.rawValue)},$argsJson)"
+        evaluateJavascript(script) { _ -> }
+    }
+
+    /**
+     * Forwards a URL (typically captured from a Universal Link / Custom
+     * URL Scheme launch) to the web layer at runtime. Mirrors the iOS
+     * SDK's `PMMapView.pushLaunchURL(_:)`. If the web layer has not yet
+     * signalled `web.ready`, the URL is stashed and replayed when it
+     * arrives.
+     */
+    fun pushLaunchURL(uri: Uri) {
+        if (!hasWebReady) {
+            appLinkUri = uri
+            return
+        }
+        commandPush(PMCommand.APP_LINK, mapOf("url" to uri.toString()))
     }
 
     //endregion

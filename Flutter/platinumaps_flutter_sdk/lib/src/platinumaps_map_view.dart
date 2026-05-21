@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import 'platinumaps_beacon_options.dart';
 import 'platinumaps_locale.dart';
+import 'platinumaps_map_controller.dart';
 
 /// Signature for the callback invoked when the embedded web map asks
 /// the host to open a link outside the WebView.
@@ -24,9 +25,12 @@ typedef PlatinumapsOpenLinkCallback =
 ///
 /// The widget hosts the platform-native WebView via a `PlatformView`.
 /// Configuration values are passed to the native side at construction
-/// time; the [onOpenLink] closure can be swapped on every rebuild and
-/// the latest one is invoked, but other fields require rebuilding the
-/// widget with a new key to take effect.
+/// time; the [onOpenLink] closure is re-read on every rebuild, but
+/// other constructor fields require rebuilding the widget with a new
+/// key to take effect. For runtime operations that must not lose the
+/// WebView state (scroll position, session cookies, …) attach a
+/// [PlatinumapsMapController] through [controller] and call its
+/// methods.
 class PlatinumapsMapView extends StatefulWidget {
   /// Creates a Platinumaps map widget.
   const PlatinumapsMapView({
@@ -41,6 +45,7 @@ class PlatinumapsMapView extends StatefulWidget {
     this.beacon,
     this.launchUrl,
     this.onOpenLink,
+    this.controller,
   });
 
   /// The map identifier appended to `https://platinumaps.jp/maps/`.
@@ -49,6 +54,10 @@ class PlatinumapsMapView extends StatefulWidget {
   final String mapSlug;
 
   /// Optional extra query parameters merged into the map URL.
+  ///
+  /// The keys are interpreted by the Platinumaps web layer — refer to
+  /// the Platinumaps web app documentation for the supported
+  /// parameter catalogue.
   final Map<String, String>? queryParams;
 
   /// Forces the map UI language. When `null`, the WebView's
@@ -71,9 +80,13 @@ class PlatinumapsMapView extends StatefulWidget {
   /// user.
   final String? secretKey;
 
-  /// When non-zero, the SDK reports a zeroed bottom safe-area inset
-  /// to the web layer — useful when the host already adds its own
-  /// bottom inset (e.g. a tab bar).
+  /// Flag-style switch on the bottom safe-area inset.
+  ///
+  /// When **non-zero**, the SDK tells the web layer to treat the
+  /// bottom safe-area inset as `0` — useful when the host is already
+  /// drawing a bottom inset (e.g. a tab bar) and does not want the
+  /// map to add its own. The integer value is **not** used as a
+  /// pixel distance; only its zero / non-zero quality matters today.
   final int offsetBottom;
 
   /// Beacon ranging configuration. Pass `null` to disable beacon
@@ -83,8 +96,10 @@ class PlatinumapsMapView extends StatefulWidget {
   /// Initial deep-link URL captured from a Universal Link / Custom
   /// URL Scheme launch. The web layer consumes it once it is ready.
   ///
-  /// Runtime pushes are not currently supported; rebuild the widget
-  /// with a new [launchUrl] to retrigger.
+  /// For URLs that arrive *after* the widget has mounted (e.g. a
+  /// later Universal Link in the same session) use
+  /// [PlatinumapsMapController.pushLaunchUrl] instead; rebuilding the
+  /// widget would tear the WebView down and lose its state.
   final Uri? launchUrl;
 
   /// Invoked when the embedded web map asks the host to open a URL
@@ -104,6 +119,12 @@ class PlatinumapsMapView extends StatefulWidget {
   ///   those commands.
   final PlatinumapsOpenLinkCallback? onOpenLink;
 
+  /// Optional imperative handle. Attach one to drive the map at
+  /// runtime (e.g. forwarding a Universal Link via
+  /// [PlatinumapsMapController.pushLaunchUrl]) without rebuilding the
+  /// widget.
+  final PlatinumapsMapController? controller;
+
   @override
   State<PlatinumapsMapView> createState() => _PlatinumapsMapViewState();
 }
@@ -114,7 +135,20 @@ class _PlatinumapsMapViewState extends State<PlatinumapsMapView> {
   MethodChannel? _channel;
 
   @override
+  void didUpdateWidget(PlatinumapsMapView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller?.detach();
+      final channel = _channel;
+      if (channel != null) {
+        widget.controller?.attach(channel);
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    widget.controller?.detach();
     _channel?.setMethodCallHandler(null);
     super.dispose();
   }
@@ -143,6 +177,7 @@ class _PlatinumapsMapViewState extends State<PlatinumapsMapView> {
     final channel = MethodChannel('$_viewType/$id');
     channel.setMethodCallHandler(_handleMethodCall);
     _channel = channel;
+    widget.controller?.attach(channel);
   }
 
   Future<Object?> _handleMethodCall(MethodCall call) async {

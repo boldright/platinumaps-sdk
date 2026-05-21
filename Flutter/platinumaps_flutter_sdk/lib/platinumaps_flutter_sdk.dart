@@ -9,4 +9,5 @@ library;
 
 export 'src/platinumaps_beacon_options.dart';
 export 'src/platinumaps_locale.dart';
+export 'src/platinumaps_map_controller.dart';
 export 'src/platinumaps_map_view.dart';

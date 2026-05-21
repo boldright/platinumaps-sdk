@@ -14,6 +14,7 @@ void main() {
       expect(widget.beacon, isNull);
       expect(widget.launchUrl, isNull);
       expect(widget.onOpenLink, isNull);
+      expect(widget.controller, isNull);
     });
 
     test('offsetBottom defaults to 0', () {
@@ -30,6 +31,7 @@ void main() {
       );
       final launchUrl = Uri.parse('https://platinumaps.jp/maps/demo/sr999');
       void onOpenLink(Uri url, {required bool sharedCookie}) {}
+      final controller = PlatinumapsMapController();
 
       final widget = PlatinumapsMapView(
         mapSlug: 'demo/sr999',
@@ -42,6 +44,7 @@ void main() {
         beacon: beacon,
         launchUrl: launchUrl,
         onOpenLink: onOpenLink,
+        controller: controller,
       );
 
       expect(widget.mapSlug, 'demo/sr999');
@@ -54,6 +57,7 @@ void main() {
       expect(widget.beacon, same(beacon));
       expect(widget.launchUrl, launchUrl);
       expect(widget.onOpenLink, same(onOpenLink));
+      expect(widget.controller, same(controller));
     });
   });
 

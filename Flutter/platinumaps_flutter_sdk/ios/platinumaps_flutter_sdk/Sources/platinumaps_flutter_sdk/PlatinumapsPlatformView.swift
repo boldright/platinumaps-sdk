@@ -48,18 +48,43 @@ final class PlatinumapsPlatformView: NSObject, FlutterPlatformView, PMMapViewDel
         if args?["hasOpenLinkHandler"] as? Bool == true {
             mv.delegate = self
         }
+
+        methodChannel.setMethodCallHandler { [weak self] call, result in
+            self?.handle(call, result: result)
+        }
     }
 
     deinit {
-        // Sever the delegate link before tearing down so an in-flight
-        // PMMapView callback cannot fire into a deallocated wrapper.
-        // PMMapView holds the delegate weakly, but clearing it is the
-        // mirror of the Android plugin's `webView.onOpenLinkListener =
-        // null` in dispose(). UIView deinit runs on the main thread,
-        // so we assume the main-actor isolation rather than hop —
-        // same pattern PMMapView uses for its own deinit cleanup.
+        // Sever the delegate link and tear down the method-channel
+        // handler before deallocation so in-flight callbacks cannot
+        // fire into a deallocated wrapper. UIView deinit runs on the
+        // main thread, so assume main-actor isolation rather than hop.
         MainActor.assumeIsolated {
             mapView.delegate = nil
+            methodChannel.setMethodCallHandler(nil)
+        }
+    }
+
+    /// Handles Dart → native invocations coming from
+    /// `PlatinumapsMapController`.
+    private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        switch call.method {
+        case "pushLaunchUrl":
+            guard let args = call.arguments as? [String: Any],
+                  let urlString = args["url"] as? String,
+                  let url = Self.parseLaunchUrl(urlString),
+                  Self.allowedLaunchUrlSchemes.contains(url.scheme?.lowercased() ?? "") else {
+                result(FlutterError(
+                    code: "invalid_arguments",
+                    message: "pushLaunchUrl requires a `url` with an allowlisted scheme",
+                    details: nil
+                ))
+                return
+            }
+            mapView.pushLaunchURL(url)
+            result(nil)
+        default:
+            result(FlutterMethodNotImplemented)
         }
     }
 
