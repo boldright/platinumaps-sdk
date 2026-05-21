@@ -207,9 +207,17 @@ public class PMMapView: UIView {
     /// location), `2` = steady state, callbacks flow through immediately.
     private var locationCallbackStatus = 0
 
-    /// Most-recent heading sample, kept because `CLLocationManager.heading`
-    /// can momentarily return `nil` after the first delivery.
+    /// Most-recent heading sample. Held here rather than read from
+    /// `CLLocationManager.heading` because that property is deprecated
+    /// in iOS 17 and emits a build warning when consumed by a Flutter
+    /// host on the iOS 17+ toolchain.
     private var lastHeading: CLHeading? = nil
+
+    /// Most-recent location sample. Held here rather than read from
+    /// `CLLocationManager.location` for the same iOS 17 deprecation
+    /// reason as `lastHeading`. Updated from the `didUpdateLocations`
+    /// callback.
+    private var lastLocation: CLLocation? = nil
 
     /// `true` while the "Location Services restricted" alert is on screen.
     /// Prevents duplicate alerts when both the location and beacon paths
@@ -946,6 +954,7 @@ extension PMMapView: @preconcurrency CLLocationManagerDelegate {
             }
             locationCallbackStatus = 0
             lastHeading = nil
+            lastLocation = nil
 
             locationManager.startUpdatingLocation()
             locationManager.startUpdatingHeading()
@@ -1125,6 +1134,11 @@ extension PMMapView: @preconcurrency CLLocationManagerDelegate {
     }
 
     public func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        // Cache the freshest sample so the rest of the SDK never has to
+        // read the deprecated `CLLocationManager.location` property.
+        if let latest = locations.last {
+            lastLocation = latest
+        }
         if locationCallbackStatus == 0 {
             locationCallbackStatus = 1
             // `didUpdateLocations` fires before `didUpdateHeading` on the
@@ -1132,26 +1146,27 @@ extension PMMapView: @preconcurrency CLLocationManagerDelegate {
             // delivering the very first callback to the web.
             Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(120))
-                let location = self?.locationManager.location
-                let heading = self?.locationManager.heading ?? self?.lastHeading
+                let location = self?.lastLocation
+                let heading = self?.lastHeading
                 self?.locationCommandCallback(location: location, heading: heading)
                 self?.locationCallbackStatus = 2
             }
         } else if locationCallbackStatus == 2 {
             // Drop callbacks until the first one has been delivered.
-            let location = manager.location
-            let heading = manager.heading ?? lastHeading
+            let location = lastLocation
+            let heading = lastHeading
             locationCommandCallback(location: location, heading: heading)
         }
     }
 
     public func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
-        // Cache the latest heading because `manager.heading` can momentarily
-        // return `nil` after the first delivery, and `didUpdateLocations`
-        // wants something to fall back on.
+        // Cache the latest heading. The previous implementation read
+        // back from `manager.heading`, but that property is deprecated
+        // on iOS 17 (warns under the Flutter 3.32+ toolchain) — so the
+        // cache is now the only source.
         lastHeading = newHeading
         if locationCallbackStatus == 2 {
-            let location = manager.location
+            let location = lastLocation
             let heading = newHeading
             locationCommandCallback(location: location, heading: heading)
         }
