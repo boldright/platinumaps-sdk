@@ -39,9 +39,7 @@ class PlatinumapsMapController {
   Future<void> pushLaunchUrl(Uri url) async {
     final channel = _channel;
     if (channel == null) return;
-    await channel.invokeMethod<void>('pushLaunchUrl', {
-      'url': url.toString(),
-    });
+    await channel.invokeMethod<void>('pushLaunchUrl', {'url': url.toString()});
   }
 
   /// Releases the controller. After this call [pushLaunchUrl] is a
