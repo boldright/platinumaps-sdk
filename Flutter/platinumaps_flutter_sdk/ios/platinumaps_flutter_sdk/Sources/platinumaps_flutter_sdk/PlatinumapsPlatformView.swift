@@ -144,12 +144,12 @@ final class PlatinumapsPlatformView: NSObject, FlutterPlatformView, PMMapViewDel
            let launchUrl = Self.parseLaunchUrl(launchUrlString),
            Self.allowedLaunchUrlSchemes.contains(launchUrl.scheme?.lowercased() ?? "") {
             // The web layer eventually echoes `launchUrl` back through
-            // its own command flow, so the Flutter host can stage a
-            // `javascript:` or `intent:`-style URL via the Dart API
-            // and reach the inside of the PlatformView's WebView.
-            // Mirror the SDK's `browseAllowedSchemes` allowlist here
-            // so the same defence-in-depth applies to host-supplied
-            // launch URLs.
+            // its own command flow, so without an allowlist a Flutter
+            // host could stage a `javascript:` or `data:`-style URL
+            // via the Dart API and reach the inside of the
+            // PlatformView's WebView. Mirror the SDK's
+            // `browseAllowedSchemes` allowlist here so the same
+            // defence-in-depth applies to host-supplied launch URLs.
             mapView.launchURL = launchUrl
         }
     }

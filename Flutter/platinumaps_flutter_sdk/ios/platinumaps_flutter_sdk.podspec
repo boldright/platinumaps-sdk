@@ -1,25 +1,19 @@
 #
 # CocoaPods spec for the Platinumaps Flutter plugin.
 #
-# For in-repo development, this podspec compiles the existing iOS
-# SDK sources through the `Sources/PlatinumapsSDK/` symlink that
-# `Package.swift` (SwiftPM build) already maintains. The symlink
-# points at `../../../../../iOS/platinumaps-sdk/`, so both build
-# managers read the same files.
-#
-# A relative glob that escapes the podspec directory (e.g.
-# `../../../iOS/platinumaps-sdk/**/*.swift`) does not work in
-# Flutter's CocoaPods pipeline: Flutter installs every plugin under
-# `ios/.symlinks/plugins/<plugin>/`, and CocoaPods resolves the
-# glob logically from that symlinked location, so the relative
-# path ends up pointing at a non-existent
-# `ios/.symlinks/iOS/platinumaps-sdk/`. Keeping the glob inside the
-# podspec directory (via the in-tree symlink) sidesteps the
-# resolution problem.
-#
-# The publish workflow (`scripts/prepublish.py`) replaces the
-# symlink with a real copy before uploading to pub.dev, so the
-# same glob keeps working in the published package.
+# `Sources/PlatinumapsSDK/` is a byte-identical mirror of
+# `iOS/platinumaps-sdk/`. Both the SwiftPM build
+# (`platinumaps_flutter_sdk/Package.swift`) and this CocoaPods
+# podspec compile that in-package directory. The mirror exists
+# because CocoaPods cannot follow a symlink into the canonical
+# tree and a relative `../../../iOS/platinumaps-sdk/**/*.swift`
+# glob also fails: Flutter installs every plugin under
+# `ios/.symlinks/plugins/<plugin>/` and resolves the glob
+# logically from that location, so the relative path ends up
+# pointing at a non-existent `ios/.symlinks/iOS/platinumaps-sdk/`.
+# Keeping all sources inside the podspec directory sidesteps
+# both problems. The CI `mirror-sync` job enforces the
+# byte-identity (`diff -r iOS/platinumaps-sdk Flutter/.../Sources/PlatinumapsSDK`).
 #
 Pod::Spec.new do |s|
   s.name             = 'platinumaps_flutter_sdk'

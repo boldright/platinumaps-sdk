@@ -120,6 +120,7 @@ vector.
 | `app.info` | Return `userId` and `secretKey`; iOS additionally returns `offsetBottom` | ✓ | ✓ |
 | `app.detect` | Reserved | stub | stub |
 | `app.review` | Open the store review page | ✓ | ✓ |
+| `app.link` | Native → web push: forward a runtime Universal Link / Custom URL Scheme to the map (outbound only; web never issues `command://app.link`) | ✓ | ✓ |
 | `stamprally.qrcode` | Reserved | stub | — |
 | `search.focus` | Reserved | stub | — |
 | `web.filechooser` | Reserved | — | stub |

@@ -1,24 +1,26 @@
 #!/usr/bin/env python3
 """Build a publish-ready snapshot of the Platinumaps Flutter plugin.
 
-For in-repo development a single source of truth lives at
-`iOS/platinumaps-sdk/` and `Android/platinumaps-sdk/`, and the
-plugin references those via:
+For in-repo development the canonical SDK sources live at
+`iOS/platinumaps-sdk/` and `Android/platinumaps-sdk/`. The plugin
+references those via:
 
   - `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk/`
-    `Sources/PlatinumapsSDK` (symlink → `../../../../../iOS/platinumaps-sdk/`)
-  - `Flutter/example/` (sibling of the plugin — pub.dev needs the
-    example physically inside the plugin)
-  - `Flutter/platinumaps_flutter_sdk/android/build.gradle.kts` (Gradle
-    `sourceSets` srcDirs entries pointing at
-    `../../../Android/platinumaps-sdk/...`)
-  - `Flutter/platinumaps_flutter_sdk/ios/platinumaps_flutter_sdk.podspec`
-    (an extra source-file glob pointing at `../../../iOS/platinumaps-sdk/`)
+    `Sources/PlatinumapsSDK/` — byte-identical mirror of
+    `iOS/platinumaps-sdk/`. (CocoaPods cannot follow a symlink into
+    the canonical tree, so the plugin ships its own copy. CI's
+    `mirror-sync` job enforces the byte-identity.)
+  - `Flutter/example/` — sibling of the plugin. pub.dev needs the
+    example physically inside the plugin.
+  - `Flutter/platinumaps_flutter_sdk/android/build.gradle.kts` —
+    Gradle `sourceSets` `srcDirs` entries point at
+    `../../../Android/platinumaps-sdk/...`.
 
 `dart pub publish` only uploads what's under
-`Flutter/platinumaps_flutter_sdk/`, so the symlinks and out-of-tree
-references die in the published artifact. This script materialises a
-self-contained snapshot the upload command can use directly.
+`Flutter/platinumaps_flutter_sdk/`, so the out-of-tree Android
+`srcDirs` references die in the published artifact. This script
+materialises a self-contained snapshot the upload command can use
+directly.
 
 Usage:
 
@@ -81,6 +83,12 @@ def archive_subtree(rel_path: str, dest_dir: Path) -> None:
 def materialize_symlinks(snapshot: Path, plugin_origin: str) -> None:
     """Replace each symlink under `snapshot` with the git-tracked subtree it
     points at, relative to the source repository.
+
+    Currently a defensive no-op — the plugin tree no longer contains
+    git-tracked symlinks (the `Sources/PlatinumapsSDK` symlink was
+    replaced with a real mirror because CocoaPods cannot follow it).
+    Kept in case future contributors reintroduce a symlink anywhere
+    under the plugin.
 
     `plugin_origin` is the repo-relative path the snapshot was extracted
     from (e.g. `"Flutter/platinumaps_flutter_sdk"`). It's needed because
@@ -198,9 +206,10 @@ _PODSPEC_REPLACEMENT = (
 
 
 def rewrite_podspec(snapshot: Path) -> None:
-    """Collapse the two source-file globs into one — at publish time the
-    `Sources/PlatinumapsSDK/` symlink is replaced with a real copy, so a
-    single recursive glob from `Sources/` covers both subtrees."""
+    """Collapse the two source-file globs into a single recursive
+    `Sources/**/*.swift` glob. Both `platinumaps_flutter_sdk/` (plugin
+    glue) and `PlatinumapsSDK/` (the in-package iOS SDK mirror) sit
+    under `Sources/`, so one glob covers them."""
     ps = snapshot / "ios/platinumaps_flutter_sdk.podspec"
     original = ps.read_text(encoding="utf-8")
     if _PODSPEC_NEEDLE not in original:

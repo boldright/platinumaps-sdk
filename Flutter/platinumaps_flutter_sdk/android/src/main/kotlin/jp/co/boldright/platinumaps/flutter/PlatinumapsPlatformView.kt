@@ -55,9 +55,9 @@ internal class PlatinumapsPlatformView(
                     result.error("invalid_arguments", "pushLaunchUrl requires a `url`", null)
                     return
                 }
-                val uri = runCatching { Uri.parse(urlString) }.getOrNull()
-                val scheme = uri?.scheme?.lowercase()
-                if (uri == null || scheme == null || scheme !in allowedLaunchUrlSchemes) {
+                val uri = Uri.parse(urlString)
+                val scheme = uri.scheme?.lowercase()
+                if (scheme == null || scheme !in allowedLaunchUrlSchemes) {
                     result.error(
                         "invalid_arguments",
                         "pushLaunchUrl requires a `url` with an allowlisted scheme",

@@ -26,12 +26,6 @@ until 1.0.0. When the release tag is cut, rename this heading to
   the map has mounted, without rebuilding the widget (which would
   lose the WebView's scroll position, session cookies, etc.).
   Mirrors the iOS native SDK's `PMMapView.pushLaunchURL(_:)`.
-
-### Changed
-
-- Android plugin: supports both AGP 8 (Flutter 3.32-3.43) and AGP 9
-  (Flutter 3.44+). Host builds on Flutter 3.44 no longer emit the
-  KGP deprecation warning.
 - `PlatinumapsBeaconOptions` for iBeacon configuration (uuid +
   optional minSample / maxHistory / memo).
 - `PlatinumapsLocale` enum covering the eleven languages the
@@ -45,6 +39,10 @@ until 1.0.0. When the release tag is cut, rename this heading to
 - iOS and Android native sources ship inside this package, so adding
   the plugin requires no extra dependency on a pre-built AAR or a
   separate native SDK release.
+- Android build tested against AGP 8 (Flutter 3.32-3.43) and AGP 9
+  (Flutter 3.44+). The plugin's build script branches on the host's
+  AGP major version so host builds on Flutter 3.44 do not emit the
+  KGP deprecation warning.
 - Example app at `Flutter/example/` demonstrating
   `PlatinumapsMapView` with `onOpenLink` plumbed through
   `url_launcher` and a small Flutter overlay stacked on top of the

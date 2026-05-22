@@ -6,15 +6,13 @@
 //
 //   Sources/platinumaps_flutter_sdk/  — plugin glue (FlutterPlugin, factory,
 //                                        per-instance PlatformView).
-//   Sources/PlatinumapsSDK/           — symlink to `../../../../../iOS/platinumaps-sdk`.
-//                                        SwiftPM target paths must stay inside
-//                                        the package root, so the link lets a
-//                                        single source of truth live under
-//                                        `iOS/platinumaps-sdk/` and still be
-//                                        compiled as a target here. The
-//                                        publish workflow (`scripts/prepublish.py`)
-//                                        replaces the symlink with a real copy
-//                                        before uploading to pub.dev.
+//   Sources/PlatinumapsSDK/           — byte-identical mirror of
+//                                        `iOS/platinumaps-sdk/`. CocoaPods cannot
+//                                        follow a symlink into the canonical
+//                                        tree (see the podspec for details), so
+//                                        the Flutter plugin keeps its own copy
+//                                        here. The CI `mirror-sync` job enforces
+//                                        the byte-identity.
 //
 // Plugin glue and SDK sources compile into a single
 // `platinumaps_flutter_sdk` target. Two reasons:

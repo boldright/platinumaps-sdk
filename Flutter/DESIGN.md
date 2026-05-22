@@ -156,13 +156,13 @@ cadences across artifacts that today live in one repo.
 
 In-repo wiring:
 
-- **Android** — `android/build.gradle` adds
+- **Android** — `android/build.gradle.kts` adds
   `../../../Android/platinumaps-sdk/src/main/java` to the plugin's
-  `main.java.srcDirs` and the matching `res` directory to
-  `main.res.srcDirs`. The Android `namespace` is set to
-  `jp.co.boldright.platinumaps.sdk` so the generated `R` /
-  `BuildConfig` classes appear where the vendored sources expect them
-  (the Flutter plugin glue itself lives in
+  `sourceSets.getByName("main").java.srcDirs(...)` and the matching
+  `res` directory to `res.srcDirs(...)`. The Android `namespace` is
+  set to `jp.co.boldright.platinumaps.sdk` so the generated `R` /
+  `BuildConfig` classes appear where the vendored sources expect
+  them (the Flutter plugin glue itself lives in
   `jp.co.boldright.platinumaps.flutter`). `buildFeatures.buildConfig`
   is `true` because the SDK reads `BuildConfig.DEBUG`.
 - **iOS** — `Sources/PlatinumapsSDK/` is a *byte-identical copy* of

@@ -27,6 +27,15 @@ class PlatinumapsMapController {
   /// If the web layer has not yet emitted `web.ready` the native side
   /// stashes the URL and replays it as soon as it arrives, mirroring
   /// the iOS native SDK's `PMMapView.pushLaunchURL(_:)`.
+  ///
+  /// The native side restricts schemes to the SDK's allowlist
+  /// (`http`, `https`, `tel`, `mailto`, `sms`, `geo`). Calling with
+  /// any other scheme completes with a
+  /// `PlatformException(code: 'invalid_arguments')`.
+  ///
+  /// Calls made before the underlying PlatformView is attached (see
+  /// [isReady]) are silently dropped — they neither throw nor
+  /// stash the URL. Wait for the next frame, or gate on [isReady].
   Future<void> pushLaunchUrl(Uri url) async {
     final channel = _channel;
     if (channel == null) return;

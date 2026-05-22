@@ -19,11 +19,11 @@ pluginManagement {
 
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
-    // Pin AGP and Kotlin to the same versions the Flutter plugin and
-    // the Android sample declare, so all three projects compile against
-    // the same toolchain. AGP 9.0.1 (preview) emits a
-    // `fun Project.android()` deprecation warning under Kotlin DSL;
-    // 8.12.0 is the latest stable.
+    // Pin AGP / Kotlin to the Flutter 3.44 template defaults so the
+    // example exercises the AGP 9 build path. The plugin module's
+    // own build.gradle.kts branches on `agpMajor < 9` to also
+    // compile under AGP 8 (Flutter 3.32-3.43) when a host pins
+    // older versions; CI / sidecar probes cover both branches.
     id("com.android.application") version "9.0.1" apply false
     id("org.jetbrains.kotlin.android") version "2.2.20" apply false
 }

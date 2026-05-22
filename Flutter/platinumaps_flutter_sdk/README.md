@@ -62,12 +62,12 @@ platform :ios, '16.0'
 `NSBluetoothAlwaysUsageDescription` is *not* required: the SDK ranges
 iBeacons through `CLLocationManager`, not `CBCentralManager`.
 
-### 4. Android minimum SDK — `android/app/build.gradle`
+### 4. Android minimum SDK — `android/app/build.gradle.kts`
 
-```gradle
+```kotlin
 android {
     defaultConfig {
-        minSdk 24
+        minSdk = 24
     }
 }
 ```
