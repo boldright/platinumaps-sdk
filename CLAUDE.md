@@ -166,7 +166,7 @@ down — call it exactly once per WebView instance.
 
 ### iOS
 
-- Toolchain: Swift 6.0+, Xcode 16+, iOS 16 deployment target.
+- Toolchain: Swift 6.2+, Xcode 26+, iOS 16 deployment target.
 - Build the package: `swift build` (from repo root, with `Package.swift`).
 - Build in Xcode: open the package, select the `PlatinumapsSDK` target,
   build.
