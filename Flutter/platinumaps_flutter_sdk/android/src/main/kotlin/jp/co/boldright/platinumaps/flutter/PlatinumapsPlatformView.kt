@@ -50,6 +50,19 @@ internal class PlatinumapsPlatformView(
         }
         methodChannel.setMethodCallHandler { call, result -> handle(call, result) }
         webView.openPlatinumaps(buildMapOptions(args))
+
+        // The native Android SDK's `PmMapOptions` has no `launchUrl`
+        // field today, so we can't fold this into `buildMapOptions`.
+        // Push it through `pushLaunchURL` instead — the WebView is
+        // still booting, so `PmWebView` stashes the URL and replays
+        // it when `web.ready` arrives, matching the iOS path.
+        val launchUrl = args?.get("launchUrl") as? String
+        if (launchUrl != null) {
+            val uri = Uri.parse(launchUrl)
+            if (isAllowedLaunchUrlScheme(uri.scheme)) {
+                webView.pushLaunchURL(uri)
+            }
+        }
     }
 
     /** Dart → native invocations coming from `PlatinumapsMapController`. */

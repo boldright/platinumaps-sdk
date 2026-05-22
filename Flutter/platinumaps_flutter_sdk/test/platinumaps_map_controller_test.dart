@@ -9,11 +9,94 @@ void main() {
       expect(controller.isReady, isFalse);
     });
 
-    test('pushLaunchUrl is a no-op before attach', () async {
+    test(
+      'pushLaunchUrl before attach stashes the URL without throwing',
+      () async {
+        final controller = PlatinumapsMapController();
+        // Should resolve immediately, without throwing or dispatching.
+        await controller.pushLaunchUrl(Uri.parse('https://example.com'));
+        expect(controller.isReady, isFalse);
+      },
+    );
+
+    test('stashed pre-attach launch URL is replayed on attach', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const channel = MethodChannel('test/platinumaps_map_controller');
+      final invocations = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            invocations.add(call);
+            return null;
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
       final controller = PlatinumapsMapController();
-      // Should not throw; just resolves without dispatching anything.
-      await controller.pushLaunchUrl(Uri.parse('https://example.com'));
-      expect(controller.isReady, isFalse);
+      await controller.pushLaunchUrl(
+        Uri.parse('https://platinumaps.jp/maps/demo/stashed'),
+      );
+      expect(invocations, isEmpty);
+
+      controller.attach(channel);
+      // The replay is fire-and-forget. Pump the microtask queue so
+      // the mock handler observes it before the assertions run.
+      await Future<void>.delayed(Duration.zero);
+
+      expect(invocations, hasLength(1));
+      final args = invocations.single.arguments as Map;
+      expect(args['url'], 'https://platinumaps.jp/maps/demo/stashed');
+    });
+
+    test('a second pre-attach push overwrites the first', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const channel = MethodChannel('test/platinumaps_map_controller');
+      final invocations = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            invocations.add(call);
+            return null;
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final controller = PlatinumapsMapController();
+      await controller.pushLaunchUrl(Uri.parse('https://example.com/first'));
+      await controller.pushLaunchUrl(Uri.parse('https://example.com/second'));
+
+      controller.attach(channel);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(invocations, hasLength(1));
+      final args = invocations.single.arguments as Map;
+      expect(args['url'], 'https://example.com/second');
+    });
+
+    test('dispose discards any pending pre-attach launch URL', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const channel = MethodChannel('test/platinumaps_map_controller');
+      final invocations = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            invocations.add(call);
+            return null;
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final controller = PlatinumapsMapController();
+      await controller.pushLaunchUrl(Uri.parse('https://example.com/dropped'));
+      controller.dispose();
+
+      controller.attach(channel);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(invocations, isEmpty);
     });
 
     test('pushLaunchUrl invokes the platform channel after attach', () async {

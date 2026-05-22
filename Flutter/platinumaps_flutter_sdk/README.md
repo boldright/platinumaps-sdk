@@ -42,11 +42,24 @@ dependencies:
 
 Once published to pub.dev: `platinumaps_flutter_sdk: ^0.1.0`.
 
-### 2. iOS deployment target — `ios/Podfile`
+### 2. iOS deployment target — `ios/Podfile` **and** Xcode
 
 ```ruby
 platform :ios, '16.0'
 ```
+
+Also raise the Xcode-side deployment target: open `ios/Runner.xcworkspace`,
+select the **Runner** target, and set **Minimum Deployments → iOS** to
+`16.0` (or higher). `flutter create` defaults this to `13.0`, and the
+Swift Package Manager resolver — used since Flutter 3.32 — refuses to
+link the plugin with:
+
+> Target Integrity: The package product 'platinumaps-flutter-sdk'
+> requires minimum platform version 16.0 for the iOS platform, but
+> this target supports 13.0.
+
+`platform :ios, '16.0'` in the Podfile only governs the CocoaPods-side
+resolution; the Xcode project setting is independent.
 
 ### 3. iOS usage descriptions — `ios/Runner/Info.plist`
 
@@ -145,7 +158,7 @@ with overlay composition and `onOpenLink` plumbing lives in
 | `secretKey` | Opaque shared secret exposed to the web layer | ✓ | — |
 | `offsetBottom` | Flag-style switch: non-zero tells the web layer to treat the bottom safe-area inset as `0` (the integer value is not used as a pixel distance — only its zero/non-zero quality matters today) | ✓ | — |
 | `beacon` | iBeacon ranging configuration | ✓ | ✓ |
-| `launchUrl` | Deep link forwarded to the web layer at first load | ✓ | — |
+| `launchUrl` | Deep link forwarded to the web layer at first load | ✓ | ✓ |
 | `controller` | [`PlatinumapsMapController`](#updating-configuration-at-runtime) handle for runtime operations | ✓ | ✓ |
 
 Fields marked `—` are accepted by the Dart API for forward
@@ -169,6 +182,10 @@ the WebView's scroll position, selected spot, or session cookies.
 Hold the controller in a `State` field — constructing it inside
 `build()` would create a fresh, unattached instance on every
 rebuild and silently drop your `pushLaunchUrl` calls.
+
+One controller drives exactly one `PlatinumapsMapView`. Passing the
+same controller to two widgets fires an assert in debug builds; give
+each widget its own controller instead.
 
 ```dart
 class _MapScreenState extends State<MapScreen> {
@@ -197,7 +214,10 @@ Available methods today:
 - `pushLaunchUrl(Uri url)` — mirror of the iOS native SDK's
   `PMMapView.pushLaunchURL(_:)`. The URL is forwarded to the web
   layer via `app.link`; if `web.ready` has not yet fired the native
-  side stashes the URL and replays it as soon as it arrives.
+  side stashes the URL and replays it as soon as it arrives. Calls
+  made before the controller is attached to a widget are also
+  stashed and replayed on attach, so it is safe to call this in the
+  same frame the host mounts the `PlatinumapsMapView`.
 
 **2. Widget rebuild with a fresh key** (for fields that the
 controller does not yet cover, like `locale` or `beacon`):
@@ -223,11 +243,25 @@ swapping that closure never requires a rebuild.
 ## Known limitations
 
 - **`PlatinumapsMapController` covers `pushLaunchUrl` only.** Other
-  runtime operations (e.g. `setLocale`) are still rebuild-only.
+  runtime operations (e.g. `setLocale`, toggling `beacon`, updating
+  `queryParams`) still require a widget rebuild with a fresh key,
+  which resets the WebView. Controller-based runtime updates are on
+  the roadmap (DESIGN.md "Open / future").
 - **No bidirectional bridge for arbitrary commands.** The Dart side
   cannot send arbitrary `command://` calls into the WebView; only
   the configuration knobs and controller methods listed above are
   exposed.
+- **`onOpenLink` with `sharedCookie: true` needs a custom in-app
+  browser on the Flutter side.** The native iOS / Android SDKs ship
+  `PMWebViewController` / `WebBrowserActivity` for this, but the
+  Flutter plugin does not yet expose them. Until then, hosts that
+  emit shared-cookie links (e.g. stamp-rally reward downloads) must
+  wire up a cookie-sharing in-app WebView themselves.
+- **Some configuration fields are iOS-only.** `appStoreId`, `userId`,
+  `secretKey`, and `offsetBottom` are ignored on Android because the
+  bundled native Android SDK has no equivalent `app.info` /
+  `app.review` / safe-area plumbing yet. `launchUrl` and the
+  `PlatinumapsMapController` methods work on both platforms.
 
 ## Sample app
 
