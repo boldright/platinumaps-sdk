@@ -44,11 +44,23 @@ class PlatinumapsMapController {
     });
   }
 
+  /// Releases the controller. After this call [pushLaunchUrl] is a
+  /// no-op. The host widget also detaches on its own `dispose`, so
+  /// calling this is idempotent and optional.
+  void dispose() {
+    _channel = null;
+  }
+
   // ---- Internal plumbing ----
 
   /// Called by `PlatinumapsMapView` when its PlatformView is created.
   /// Not part of the public API.
   void attach(MethodChannel channel) {
+    assert(
+      _channel == null,
+      'PlatinumapsMapController is already attached. A single controller '
+      'cannot drive two PlatinumapsMapView widgets at once.',
+    );
     _channel = channel;
   }
 

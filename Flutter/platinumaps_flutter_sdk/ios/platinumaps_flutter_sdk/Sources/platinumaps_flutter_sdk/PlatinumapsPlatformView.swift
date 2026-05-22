@@ -19,6 +19,15 @@ final class PlatinumapsPlatformView: NSObject, FlutterPlatformView, PMMapViewDel
         "http", "https", "tel", "mailto", "sms", "geo",
     ]
 
+    /// `true` when [url]'s scheme is in the launch-URL allowlist.
+    /// Exposed at static scope so unit tests can pin the allowlist
+    /// behaviour directly.
+    internal static func isAllowedLaunchUrlScheme(_ url: URL) -> Bool {
+        return Self.allowedLaunchUrlSchemes.contains(
+            url.scheme?.lowercased() ?? ""
+        )
+    }
+
     private let mapView: PMMapView
     private let methodChannel: FlutterMethodChannel
 
@@ -73,7 +82,7 @@ final class PlatinumapsPlatformView: NSObject, FlutterPlatformView, PMMapViewDel
             guard let args = call.arguments as? [String: Any],
                   let urlString = args["url"] as? String,
                   let url = Self.parseLaunchUrl(urlString),
-                  Self.allowedLaunchUrlSchemes.contains(url.scheme?.lowercased() ?? "") else {
+                  Self.isAllowedLaunchUrlScheme(url) else {
                 result(FlutterError(
                     code: "invalid_arguments",
                     message: "pushLaunchUrl requires a `url` with an allowlisted scheme",

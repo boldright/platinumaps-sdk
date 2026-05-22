@@ -166,16 +166,31 @@ the widget is on screen:
 controller and call its methods to drive the map without losing
 the WebView's scroll position, selected spot, or session cookies.
 
+Hold the controller in a `State` field — constructing it inside
+`build()` would create a fresh, unattached instance on every
+rebuild and silently drop your `pushLaunchUrl` calls.
+
 ```dart
-final controller = PlatinumapsMapController();
+class _MapScreenState extends State<MapScreen> {
+  final _controller = PlatinumapsMapController();
 
-PlatinumapsMapView(
-  controller: controller,
-  mapSlug: 'demo',
-)
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
-// Later — for example, a Universal Link arrived after the map mounted:
-await controller.pushLaunchUrl(uri);
+  @override
+  Widget build(BuildContext context) {
+    return PlatinumapsMapView(
+      controller: _controller,
+      mapSlug: 'demo',
+    );
+  }
+
+  // Later — for example, a Universal Link arrived after the map mounted:
+  Future<void> _onLink(Uri uri) => _controller.pushLaunchUrl(uri);
+}
 ```
 
 Available methods today:

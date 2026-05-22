@@ -29,7 +29,14 @@ class _ExampleHome extends StatefulWidget {
 }
 
 class _ExampleHomeState extends State<_ExampleHome> {
+  final _controller = PlatinumapsMapController();
   String? _lastOpenedLink;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   Future<void> _handleOpenLink(Uri url, {required bool sharedCookie}) async {
     setState(() => _lastOpenedLink = url.toString());
@@ -47,14 +54,30 @@ class _ExampleHomeState extends State<_ExampleHome> {
     }
   }
 
+  // Stands in for the Universal Link / Custom URL Scheme entry the
+  // host would normally receive at runtime. Tap the FAB to verify the
+  // controller actually forwards the URL through to the WebView
+  // without rebuilding the PlatformView.
+  Future<void> _pushDemoLaunchUrl() async {
+    await _controller.pushLaunchUrl(
+      Uri.parse('https://platinumaps.jp/maps/demo'),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Platinumaps demo')),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _pushDemoLaunchUrl,
+        tooltip: 'Push a demo deep link via PlatinumapsMapController',
+        child: const Icon(Icons.link),
+      ),
       body: Stack(
         children: [
           PlatinumapsMapView(
             mapSlug: 'demo',
+            controller: _controller,
             locale: PlatinumapsLocale.ja,
             onOpenLink: _handleOpenLink,
           ),

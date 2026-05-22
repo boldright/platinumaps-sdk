@@ -30,6 +30,12 @@ internal class PlatinumapsPlatformView(
         "${PlatinumapsFlutterPlugin.VIEW_TYPE}/$viewId",
     )
 
+    // `dispose()` and the host Lifecycle's onDestroy both reach the
+    // native SDK's `activityDestroy()` (CLAUDE.md: "call exactly once
+    // per WebView instance"). Either may fire first, so this flag
+    // makes the second call a no-op.
+    private var hasDestroyedWebView = false
+
     init {
         // Only claim the SDK's OnOpenLinkListener when the Dart side
         // actually has an `onOpenLink` callback. Leaving the listener
@@ -56,8 +62,7 @@ internal class PlatinumapsPlatformView(
                     return
                 }
                 val uri = Uri.parse(urlString)
-                val scheme = uri.scheme?.lowercase()
-                if (scheme == null || scheme !in allowedLaunchUrlSchemes) {
+                if (!isAllowedLaunchUrlScheme(uri.scheme)) {
                     result.error(
                         "invalid_arguments",
                         "pushLaunchUrl requires a `url` with an allowlisted scheme",
@@ -81,6 +86,18 @@ internal class PlatinumapsPlatformView(
         private val allowedLaunchUrlSchemes: Set<String> = setOf(
             "http", "https", "tel", "mailto", "sms", "geo",
         )
+
+        /**
+         * `true` when [scheme] is in the launch-URL allowlist. Pulled
+         * out of `handle()` so unit tests can exercise the allowlist
+         * without standing up a real WebView. Takes a `String?`
+         * (rather than `Uri`) so the test source set can call it
+         * without depending on Robolectric for `Uri.parse`.
+         */
+        internal fun isAllowedLaunchUrlScheme(scheme: String?): Boolean {
+            if (scheme == null) return false
+            return scheme.lowercase() in allowedLaunchUrlSchemes
+        }
 
         /**
          * Translates the creation arguments the Dart side sends through
@@ -158,7 +175,7 @@ internal class PlatinumapsPlatformView(
     override fun dispose() {
         methodChannel.setMethodCallHandler(null)
         webView.onOpenLinkListener = null
-        webView.activityDestroy()
+        destroyWebViewOnce()
         onDispose(viewId)
     }
 
@@ -185,9 +202,16 @@ internal class PlatinumapsPlatformView(
      * Forwards Activity `onDestroy`. `dispose()` already calls
      * `activityDestroy()` on its own, but the host Activity can go
      * away while the PlatformView is still attached, in which case
-     * the lifecycle event arrives first.
+     * the lifecycle event arrives first. The guard inside
+     * [destroyWebViewOnce] keeps the second call a no-op.
      */
     fun activityDestroy() {
+        destroyWebViewOnce()
+    }
+
+    private fun destroyWebViewOnce() {
+        if (hasDestroyedWebView) return
+        hasDestroyedWebView = true
         webView.activityDestroy()
     }
 

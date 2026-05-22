@@ -1,12 +1,15 @@
 package jp.co.boldright.platinumaps.flutter
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Unit tests for [PlatinumapsPlatformView.buildMapOptions]. Runs on the
- * JVM via the AGP `test` source set — no WebView, no Robolectric.
+ * Unit tests for [PlatinumapsPlatformView.buildMapOptions] and the
+ * launch-URL scheme allowlist. Runs on the JVM via the AGP `test`
+ * source set — no WebView, no Robolectric.
  */
 class PlatinumapsPlatformViewTest {
 
@@ -127,5 +130,37 @@ class PlatinumapsPlatformViewTest {
         assertEquals("demo", options.mapPath)
         assertNull(options.queryParams)
         assertNull(options.beacon)
+    }
+
+    @Test
+    fun `isAllowedLaunchUrlScheme accepts every scheme in the SDK allowlist`() {
+        for (scheme in listOf("http", "https", "tel", "mailto", "sms", "geo")) {
+            assertTrue(
+                "expected $scheme to be allowed",
+                PlatinumapsPlatformView.isAllowedLaunchUrlScheme(scheme),
+            )
+        }
+    }
+
+    @Test
+    fun `isAllowedLaunchUrlScheme is case-insensitive`() {
+        assertTrue(PlatinumapsPlatformView.isAllowedLaunchUrlScheme("HTTPS"))
+        assertTrue(PlatinumapsPlatformView.isAllowedLaunchUrlScheme("Mailto"))
+    }
+
+    @Test
+    fun `isAllowedLaunchUrlScheme rejects unsafe schemes`() {
+        for (scheme in listOf("javascript", "file", "intent", "about", "data")) {
+            assertFalse(
+                "expected $scheme to be rejected",
+                PlatinumapsPlatformView.isAllowedLaunchUrlScheme(scheme),
+            )
+        }
+    }
+
+    @Test
+    fun `isAllowedLaunchUrlScheme rejects null and empty`() {
+        assertFalse(PlatinumapsPlatformView.isAllowedLaunchUrlScheme(null))
+        assertFalse(PlatinumapsPlatformView.isAllowedLaunchUrlScheme(""))
     }
 }

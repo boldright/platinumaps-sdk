@@ -181,4 +181,45 @@ final class PlatinumapsPlatformViewTests: XCTestCase {
 
         XCTAssertNil(mapView.launchURL)
     }
+
+    // MARK: - pushLaunchUrl scheme allowlist
+
+    func test_isAllowedLaunchUrlScheme_acceptsEverySchemeInTheAllowlist() throws {
+        let allowedUrls = [
+            URL(string: "https://example.com")!,
+            URL(string: "http://example.com")!,
+            URL(string: "tel:1234")!,
+            URL(string: "mailto:foo@example.com")!,
+            URL(string: "sms:1234")!,
+            URL(string: "geo:0,0")!,
+        ]
+        for url in allowedUrls {
+            XCTAssertTrue(
+                PlatinumapsPlatformView.isAllowedLaunchUrlScheme(url),
+                "expected \(url) to be allowed"
+            )
+        }
+    }
+
+    func test_isAllowedLaunchUrlScheme_isCaseInsensitive() throws {
+        XCTAssertTrue(
+            PlatinumapsPlatformView.isAllowedLaunchUrlScheme(
+                URL(string: "HTTPS://example.com")!
+            )
+        )
+    }
+
+    func test_isAllowedLaunchUrlScheme_rejectsUnsafeSchemes() throws {
+        let rejectedUrls = [
+            URL(string: "javascript:alert('x')")!,
+            URL(string: "file:///etc/passwd")!,
+            URL(string: "data:text/html,<h1>x</h1>")!,
+        ]
+        for url in rejectedUrls {
+            XCTAssertFalse(
+                PlatinumapsPlatformView.isAllowedLaunchUrlScheme(url),
+                "expected \(url) to be rejected"
+            )
+        }
+    }
 }

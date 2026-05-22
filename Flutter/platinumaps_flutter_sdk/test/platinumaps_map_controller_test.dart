@@ -57,5 +57,23 @@ void main() {
       controller.detach();
       expect(controller.isReady, isFalse);
     });
+
+    test('dispose reverts isReady to false', () {
+      final controller = PlatinumapsMapController();
+      controller.attach(const MethodChannel('test/platinumaps_map_controller'));
+      controller.dispose();
+      expect(controller.isReady, isFalse);
+    });
+
+    test('attaching twice without detach fires an assert in debug mode', () {
+      final controller = PlatinumapsMapController();
+      controller.attach(const MethodChannel('test/platinumaps_map_controller'));
+      expect(
+        () => controller.attach(
+          const MethodChannel('test/platinumaps_map_controller_2'),
+        ),
+        throwsA(isA<AssertionError>()),
+      );
+    });
   });
 }
