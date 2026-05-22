@@ -309,10 +309,13 @@ class PMMainViewController: UIViewController {
         initBeaconIfNeeded()
     }
 
-    deinit {
+    isolated deinit {
         // Best-effort cleanup: stop any in-flight sensors and detach observers
         // so callbacks cannot fire into a deallocated controller. We touch
         // `_locationManager` directly to avoid lazily creating one in deinit.
+        // `isolated deinit` (SE-0371, Swift 6.2+) hops to the MainActor before
+        // running so we can safely touch the controller's MainActor-isolated,
+        // non-Sendable resources (CLLocationManager, CLBeaconRegion, Task).
         NotificationCenter.default.removeObserver(self)
         retryTask?.cancel()
         if let manager = _locationManager {
