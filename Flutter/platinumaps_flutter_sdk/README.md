@@ -93,6 +93,7 @@ android {
 <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
 <uses-permission android:name="android.permission.CAMERA"/>
 <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+<uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
 <!-- Only if you enable iBeacon ranging. -->
 <uses-permission android:name="android.permission.BLUETOOTH_SCAN"/>
 <!-- Legacy bluetooth permissions for API < 31. -->
