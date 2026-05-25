@@ -126,14 +126,13 @@ class PlatinumapsPlatformViewTest {
     }
 
     @Test
-    fun `appStoreId launchUrl offsetBottom are not echoed into PmMapOptions`() {
+    fun `appStoreId and launchUrl are not echoed into PmMapOptions`() {
         // These keys are consumed elsewhere (iOS-only or by the init
         // block); the parser should not invent fields for them.
         val options = PlatinumapsPlatformView.buildMapOptions(
             mapOf(
                 "mapSlug" to "demo",
                 "appStoreId" to "1234567890",
-                "offsetBottom" to 24,
                 "launchUrl" to "https://platinumaps.jp/maps/demo",
             ),
         )
@@ -145,14 +144,25 @@ class PlatinumapsPlatformViewTest {
     }
 
     @Test
-    fun `safe-area arguments override the defaults`() {
+    fun `safeAreaTop and safeAreaBottom flow into PmMapOptions verbatim`() {
         val options = PlatinumapsPlatformView.buildMapOptions(
-            args = mapOf("mapSlug" to "demo"),
-            safeAreaTop = 48,
-            safeAreaBottom = 16,
+            mapOf(
+                "mapSlug" to "demo",
+                "safeAreaTop" to 48,
+                "safeAreaBottom" to 16,
+            ),
         )
         assertEquals(48, options.safeAreaTop)
         assertEquals(16, options.safeAreaBottom)
+    }
+
+    @Test
+    fun `safe-area defaults to zero when the Dart side omits the keys`() {
+        val options = PlatinumapsPlatformView.buildMapOptions(
+            mapOf("mapSlug" to "demo"),
+        )
+        assertEquals(0, options.safeAreaTop)
+        assertEquals(0, options.safeAreaBottom)
     }
 
     @Test

@@ -138,6 +138,16 @@ public class PMMapView: UIView {
     /// own bottom inset (e.g. a tab bar).
     public var offsetBottom: Int = 0
 
+    /// Optional override for the safe-area inset values forwarded to the
+    /// web layer. When set, the SDK uses these values verbatim instead of
+    /// reading `self.safeAreaInsets`. Intended for hosts that compute the
+    /// inset themselves (e.g. Flutter, which passes
+    /// `MediaQuery.padding` from the widget tree).
+    public var safeAreaTopOverride: Int? = nil
+
+    /// Companion to [safeAreaTopOverride] for the bottom inset.
+    public var safeAreaBottomOverride: Int? = nil
+
     /// Optional. URL captured from a Universal Link / Custom URL Scheme launch
     /// that should be forwarded to the web app once it is ready. Use
     /// `pushLaunchURL(_:)` from outside the SDK to push a URL at runtime.
@@ -380,12 +390,21 @@ public class PMMapView: UIView {
             }
             queryItems.append(URLQueryItem(name: item.key, value: item.value))
         }
-        // Safe-area insets are only valid after the view has been laid
-        // out, so we capture them here on first attach.
-        let safeAreaTop = self.safeAreaInsets.top
-        var safeAreaBottom = self.safeAreaInsets.bottom
-        if (offsetBottom > 0) {
-            safeAreaBottom = 0;
+        // When the host has supplied explicit safe-area values
+        // (`safeAreaTopOverride` / `safeAreaBottomOverride`), use them
+        // verbatim. Otherwise fall back to `self.safeAreaInsets` — which
+        // is only valid after the view has been laid out, so reading on
+        // first attach can return zero on devices with a notch / home
+        // indicator (callers needing accuracy should set the override).
+        let safeAreaTop: Double = safeAreaTopOverride.map(Double.init)
+            ?? Double(self.safeAreaInsets.top)
+        let safeAreaBottom: Double
+        if let override = safeAreaBottomOverride {
+            safeAreaBottom = Double(override)
+        } else if offsetBottom > 0 {
+            safeAreaBottom = 0
+        } else {
+            safeAreaBottom = Double(self.safeAreaInsets.bottom)
         }
         queryItems.append(URLQueryItem(name: "safearea", value: "\(safeAreaTop),\(safeAreaBottom)"));
         urlComp.queryItems = queryItems;

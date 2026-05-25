@@ -40,12 +40,15 @@ class PlatinumapsMapView extends StatefulWidget {
     this.appStoreId,
     this.userId,
     this.secretKey,
-    this.offsetBottom = 0,
+    this.safeAreaTop = 0,
+    this.safeAreaBottom = 0,
     this.beacon,
     this.launchUrl,
     this.onOpenLink,
     this.controller,
-  }) : assert(mapSlug != '', 'mapSlug must not be empty');
+  }) : assert(mapSlug != '', 'mapSlug must not be empty'),
+       assert(safeAreaTop >= 0, 'safeAreaTop must not be negative'),
+       assert(safeAreaBottom >= 0, 'safeAreaBottom must not be negative');
 
   /// The map identifier appended to `https://platinumaps.jp/maps/`.
   ///
@@ -79,14 +82,19 @@ class PlatinumapsMapView extends StatefulWidget {
   /// user.
   final String? secretKey;
 
-  /// Flag-style switch on the bottom safe-area inset.
+  /// Top safe-area inset reported to the web layer, in **logical
+  /// pixels** (the same unit `MediaQuery.of(context).padding` uses).
   ///
-  /// When **non-zero**, the SDK tells the web layer to treat the
-  /// bottom safe-area inset as `0` — useful when the host is already
-  /// drawing a bottom inset (e.g. a tab bar) and does not want the
-  /// map to add its own. The integer value is **not** used as a
-  /// pixel distance; only its zero / non-zero quality matters today.
-  final int offsetBottom;
+  /// Pass `MediaQuery.of(context).padding.top` when the map fills the
+  /// screen and you want the web UI to inset itself under the status
+  /// bar / notch. Pass `0` when the host is already drawing chrome
+  /// above the map (e.g. an `AppBar`) and the map's own coordinate
+  /// space is already inset.
+  final int safeAreaTop;
+
+  /// Bottom safe-area inset reported to the web layer, in **logical
+  /// pixels**. Same conventions as [safeAreaTop].
+  final int safeAreaBottom;
 
   /// Beacon ranging configuration. Pass `null` to disable beacon
   /// scanning entirely.
@@ -158,7 +166,8 @@ class _PlatinumapsMapViewState extends State<PlatinumapsMapView> {
       if (widget.appStoreId != null) 'appStoreId': widget.appStoreId,
       if (widget.userId != null) 'userId': widget.userId,
       if (widget.secretKey != null) 'secretKey': widget.secretKey,
-      'offsetBottom': widget.offsetBottom,
+      'safeAreaTop': widget.safeAreaTop,
+      'safeAreaBottom': widget.safeAreaBottom,
       if (widget.beacon != null) 'beacon': widget.beacon!.toMap(),
       if (widget.launchUrl != null) 'launchUrl': widget.launchUrl!.toString(),
     };

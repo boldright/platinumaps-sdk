@@ -80,6 +80,19 @@ public class PMMainViewController: UIViewController {
         set { mapView.offsetBottom = newValue }
     }
 
+    /// Optional override for the top safe-area inset forwarded to the
+    /// web layer. See `PMMapView.safeAreaTopOverride`.
+    public var safeAreaTopOverride: Int? {
+        get { mapView.safeAreaTopOverride }
+        set { mapView.safeAreaTopOverride = newValue }
+    }
+
+    /// Companion to [safeAreaTopOverride] for the bottom inset.
+    public var safeAreaBottomOverride: Int? {
+        get { mapView.safeAreaBottomOverride }
+        set { mapView.safeAreaBottomOverride = newValue }
+    }
+
     /// Optional. URL captured from a Universal Link / Custom URL Scheme launch
     /// that should be forwarded to the web app once it is ready. Use
     /// `pushLaunchURL(_:)` from outside the SDK to push a URL at runtime.

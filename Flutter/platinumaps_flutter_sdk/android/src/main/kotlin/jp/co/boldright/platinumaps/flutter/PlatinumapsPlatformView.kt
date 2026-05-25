@@ -1,13 +1,10 @@
 package jp.co.boldright.platinumaps.flutter
 
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import android.view.View
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -47,18 +44,7 @@ internal class PlatinumapsPlatformView(
         webView.onOpenLinkListener = this
         methodChannel.setMethodCallHandler { call, result -> handle(call, result) }
 
-        val offsetBottom = (args?.get("offsetBottom") as? Number)?.toInt() ?: 0
-        val (safeAreaTop, safeAreaBottom) = resolveSafeAreaInsets(
-            context = context,
-            zeroBottom = offsetBottom > 0,
-        )
-        webView.openPlatinumaps(
-            buildMapOptions(
-                args = args,
-                safeAreaTop = safeAreaTop,
-                safeAreaBottom = safeAreaBottom,
-            ),
-        )
+        webView.openPlatinumaps(buildMapOptions(args))
 
         // The native Android SDK's `PmMapOptions` has no `launchUrl`
         // field today, so we can't fold this into `buildMapOptions`.
@@ -122,28 +108,6 @@ internal class PlatinumapsPlatformView(
         }
 
         /**
-         * Resolves the system-bar + display-cutout insets from the host
-         * Activity's decor view, so the WebView can lay out under
-         * status bar / nav bar / notch the same way the iOS path does.
-         * `zeroBottom` reflects the Dart-side `offsetBottom` flag: when
-         * the host already draws a bottom inset (e.g. a tab bar) the
-         * map should ignore the system one.
-         */
-        internal fun resolveSafeAreaInsets(
-            context: Context,
-            zeroBottom: Boolean,
-        ): Pair<Int, Int> {
-            val activity = context as? Activity ?: return Pair(0, 0)
-            val rootInsets = ViewCompat.getRootWindowInsets(activity.window.decorView)
-                ?: return Pair(0, 0)
-            val systemInsets = rootInsets.getInsets(
-                WindowInsetsCompat.Type.systemBars()
-                    or WindowInsetsCompat.Type.displayCutout(),
-            )
-            return Pair(systemInsets.top, if (zeroBottom) 0 else systemInsets.bottom)
-        }
-
-        /**
          * Translates the creation arguments the Dart side sends through
          * the platform channel into a [PmMapOptions] the native SDK
          * understands. Exposed at companion scope (rather than buried in
@@ -158,15 +122,12 @@ internal class PlatinumapsPlatformView(
          * app honours an explicit `culture=` override regardless of
          * platform.
          *
-         * `launchUrl`, `appStoreId`, and `offsetBottom` (the flag-only
-         * value) are consumed by the init block, not here. Safe-area
-         * insets are resolved by the caller and passed in.
+         * `launchUrl` and `appStoreId` are consumed by the init block
+         * or are iOS-only. `safeAreaTop` / `safeAreaBottom` come from
+         * the Dart side in **logical pixels** — the same unit the web
+         * layer interprets as CSS px.
          */
-        internal fun buildMapOptions(
-            args: Map<String, Any?>?,
-            safeAreaTop: Int = 0,
-            safeAreaBottom: Int = 0,
-        ): PmMapOptions {
+        internal fun buildMapOptions(args: Map<String, Any?>?): PmMapOptions {
             val mapSlug = (args?.get("mapSlug") as? String).orEmpty()
             if (mapSlug.isEmpty()) {
                 Log.w(
@@ -215,8 +176,8 @@ internal class PlatinumapsPlatformView(
             return PmMapOptions(
                 mapPath = mapSlug,
                 queryParams = queryParams,
-                safeAreaTop = safeAreaTop,
-                safeAreaBottom = safeAreaBottom,
+                safeAreaTop = (args?.get("safeAreaTop") as? Number)?.toInt() ?: 0,
+                safeAreaBottom = (args?.get("safeAreaBottom") as? Number)?.toInt() ?: 0,
                 beacon = beaconOptions,
                 userId = args?.get("userId") as? String,
                 secretKey = args?.get("secretKey") as? String,

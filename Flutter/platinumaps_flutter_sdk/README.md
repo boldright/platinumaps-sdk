@@ -157,7 +157,7 @@ with overlay composition and `onOpenLink` plumbing lives in
 | `appStoreId` | App Store ID consumed by `app.review` | ✓ | — |
 | `userId` | Opaque user identifier exposed to the web layer | ✓ | ✓ |
 | `secretKey` | Opaque shared secret exposed to the web layer | ✓ | ✓ |
-| `offsetBottom` | Flag-style switch: non-zero tells the web layer to treat the bottom safe-area inset as `0` (the integer value is not used as a pixel distance — only its zero/non-zero quality matters today) | ✓ | ✓ |
+| `safeAreaTop`, `safeAreaBottom` | Safe-area insets (logical pixels) forwarded to the web layer. Pass `MediaQuery.of(context).padding.top` / `.bottom` when the map fills the screen; pass `0` when the host already draws above / below the map (e.g. an `AppBar`) | ✓ | ✓ |
 | `beacon` | iBeacon ranging configuration | ✓ | ✓ |
 | `launchUrl` | Deep link forwarded to the web layer at first load | ✓ | ✓ |
 | `controller` | [`PlatinumapsMapController`](#updating-configuration-at-runtime) handle for runtime operations | ✓ | ✓ |

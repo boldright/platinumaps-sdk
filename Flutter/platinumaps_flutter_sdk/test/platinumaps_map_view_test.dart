@@ -17,9 +17,10 @@ void main() {
       expect(widget.controller, isNull);
     });
 
-    test('offsetBottom defaults to 0', () {
+    test('safeAreaTop and safeAreaBottom default to 0', () {
       const widget = PlatinumapsMapView(mapSlug: 'demo');
-      expect(widget.offsetBottom, 0);
+      expect(widget.safeAreaTop, 0);
+      expect(widget.safeAreaBottom, 0);
     });
 
     test('propagates every constructor argument', () {
@@ -40,7 +41,8 @@ void main() {
         appStoreId: '1234567890',
         userId: 'u-1',
         secretKey: 's-1',
-        offsetBottom: 24,
+        safeAreaTop: 48,
+        safeAreaBottom: 16,
         beacon: beacon,
         launchUrl: launchUrl,
         onOpenLink: onOpenLink,
@@ -53,7 +55,8 @@ void main() {
       expect(widget.appStoreId, '1234567890');
       expect(widget.userId, 'u-1');
       expect(widget.secretKey, 's-1');
-      expect(widget.offsetBottom, 24);
+      expect(widget.safeAreaTop, 48);
+      expect(widget.safeAreaBottom, 16);
       expect(widget.beacon, same(beacon));
       expect(widget.launchUrl, launchUrl);
       expect(widget.onOpenLink, same(onOpenLink));

@@ -152,8 +152,14 @@ final class PlatinumapsPlatformView: NSObject, FlutterPlatformView, PMMapViewDel
         if let secretKey = args?["secretKey"] as? String {
             mapView.secretKey = secretKey
         }
-        if let offsetBottom = args?["offsetBottom"] as? Int {
-            mapView.offsetBottom = offsetBottom
+        // The Dart side hands us safe-area values in logical pixels
+        // (the unit `MediaQuery.padding` already uses). PMMapView
+        // forwards them verbatim into the `safearea=` query parameter.
+        if let safeAreaTop = args?["safeAreaTop"] as? Int {
+            mapView.safeAreaTopOverride = safeAreaTop
+        }
+        if let safeAreaBottom = args?["safeAreaBottom"] as? Int {
+            mapView.safeAreaBottomOverride = safeAreaBottom
         }
         if let launchUrlString = args?["launchUrl"] as? String,
            let launchUrl = Self.parseLaunchUrl(launchUrlString),

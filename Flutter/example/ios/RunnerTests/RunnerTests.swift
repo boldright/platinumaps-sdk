@@ -29,7 +29,8 @@ final class PlatinumapsPlatformViewTests: XCTestCase {
         XCTAssertNil(mapView.appStoreId)
         XCTAssertNil(mapView.userId)
         XCTAssertNil(mapView.secretKey)
-        XCTAssertEqual(mapView.offsetBottom, 0)
+        XCTAssertNil(mapView.safeAreaTopOverride)
+        XCTAssertNil(mapView.safeAreaBottomOverride)
         XCTAssertNil(mapView.beaconUuid)
         XCTAssertNil(mapView.launchURL)
     }
@@ -79,7 +80,6 @@ final class PlatinumapsPlatformViewTests: XCTestCase {
                 "appStoreId": "1234567890",
                 "userId": "u-1",
                 "secretKey": "s-1",
-                "offsetBottom": 24,
             ],
             to: mapView
         )
@@ -87,7 +87,21 @@ final class PlatinumapsPlatformViewTests: XCTestCase {
         XCTAssertEqual(mapView.appStoreId, "1234567890")
         XCTAssertEqual(mapView.userId, "u-1")
         XCTAssertEqual(mapView.secretKey, "s-1")
-        XCTAssertEqual(mapView.offsetBottom, 24)
+    }
+
+    func test_safeAreaArgumentsPopulateTheOverrides() throws {
+        let mapView = PMMapView(frame: .zero)
+        PlatinumapsPlatformView.applyCreationArguments(
+            [
+                "mapSlug": "demo",
+                "safeAreaTop": 48,
+                "safeAreaBottom": 16,
+            ],
+            to: mapView
+        )
+
+        XCTAssertEqual(mapView.safeAreaTopOverride, 48)
+        XCTAssertEqual(mapView.safeAreaBottomOverride, 16)
     }
 
     func test_beaconUuidIsApplied() throws {
