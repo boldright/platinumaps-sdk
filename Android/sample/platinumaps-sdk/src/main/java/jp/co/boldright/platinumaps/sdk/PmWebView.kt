@@ -514,6 +514,12 @@ class PmWebView @JvmOverloads constructor(
     }
 
     private fun openPlatinumaps(options: PmMapOptions, queryPrams: String?) {
+        // Stash the `app.info` fields so the `app.info` command can echo
+        // them back to the web layer regardless of how the caller built
+        // the options (Flutter plugin glue, native sample, …).
+        userId = options.userId
+        secretKey = options.secretKey
+
         // Build the URL safely with Uri.Builder so query values are encoded
         // correctly even when they contain `&`, `=`, etc.
         val uriBuilder = "https://platinumaps.jp/maps/".toUri().buildUpon()
@@ -1060,17 +1066,42 @@ class PmWebView @JvmOverloads constructor(
     }
 
     private fun openWebBrowseInApp(uri: Uri) {
-        parentActivity?.let {
-            CustomTabsIntent.Builder().build().launchUrl(it, uri)
+        val listener = onOpenLinkListener
+        if (listener != null) {
+            listener.onOpenLink(uri, sharedCookie = false, openInExternalApp = false)
+        } else {
+            openLinkUsingDefault(uri, sharedCookie = false, openInExternalApp = false)
         }
     }
 
     private fun openWebBrowseActivity(uri: Uri) {
-        onOpenLinkListener?.onOpenLink(uri, true)
+        onOpenLinkListener?.onOpenLink(uri, sharedCookie = true, openInExternalApp = false)
     }
 
     private fun openWebBrowseApp(uri: Uri) {
-        onOpenLinkListener?.onOpenLink(uri, false)
+        onOpenLinkListener?.onOpenLink(uri, sharedCookie = false, openInExternalApp = true)
+    }
+
+    /**
+     * Runs the SDK's built-in link handler for [uri] — the same routing
+     * the browse commands use when no [onOpenLinkListener] is set.
+     * Listeners that want to selectively fall back to the SDK can call
+     * this from their callback.
+     *
+     * Today only `http`/`https` + `sharedCookie == false` + `openInExternalApp
+     * == false` has a built-in handler (Chrome Custom Tabs). Everything
+     * else is logged and dropped — the Android SDK has no external-app
+     * launcher or shared-cookie WebView today.
+     */
+    fun openLinkUsingDefault(uri: Uri, sharedCookie: Boolean, openInExternalApp: Boolean) {
+        val scheme = uri.scheme?.lowercase()
+        if (openInExternalApp || scheme !in setOf("http", "https") || sharedCookie) {
+            Log.w(TAG, "openLinkUsingDefault: no built-in handler for $uri; dropping")
+            return
+        }
+        parentActivity?.let {
+            CustomTabsIntent.Builder().build().launchUrl(it, uri)
+        }
     }
 
     //endregion
@@ -2016,5 +2047,16 @@ class PmWebView @JvmOverloads constructor(
          * @param sharedCookie A boolean flag that is true when user information needs to be passed to the link, such as for temporary download benefits or external link benefits.
          */
         fun onOpenLink(url: Uri, sharedCookie: Boolean)
+
+        /**
+         * Called when a link is opened, including a flag for whether the
+         * web layer requested an external-app launch (`browse.app` /
+         * `map.navigate`) rather than an in-app browser (`browse.inapp`).
+         * The default implementation forwards to [onOpenLink] for
+         * back-compat with existing hosts.
+         */
+        fun onOpenLink(url: Uri, sharedCookie: Boolean, openInExternalApp: Boolean) {
+            onOpenLink(url, sharedCookie)
+        }
     }
 }

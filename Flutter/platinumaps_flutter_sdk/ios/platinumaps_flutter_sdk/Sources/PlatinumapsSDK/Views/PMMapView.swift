@@ -23,6 +23,19 @@ public protocol PMMapViewDelegate: AnyObject {
     ///     that shares cookies with the embedded WebView. `false` when the
     ///     link is safe to hand off to the system browser.
     func openLink(_ url: URL, sharedCookie: Bool)
+
+    /// Variant that distinguishes `browse.app` (`openInExternalApp == true`)
+    /// from `browse.inapp` so the host can route the URL to the system app
+    /// versus an in-app browser. The default implementation forwards to
+    /// `openLink(_:sharedCookie:)`, preserving existing delegates.
+    func openLink(_ url: URL, sharedCookie: Bool, openInExternalApp: Bool)
+}
+
+@MainActor
+public extension PMMapViewDelegate {
+    func openLink(_ url: URL, sharedCookie: Bool, openInExternalApp: Bool) {
+        openLink(url, sharedCookie: sharedCookie)
+    }
 }
 
 /// Hosts the Platinumaps `WKWebView` and bridges native capabilities
@@ -734,22 +747,20 @@ extension PMMapView {
                 }
 
                 if let url = wUrl, Self.isSchemeAllowedForBrowse(url) {
-                    if let _ = delegate {
-                        delegate?.openLink(url, sharedCookie: queryItems["sharedCookie"] == "true")
-                        return
-                    }
-                    if command == .browseApp
-                        || (url.scheme != "https" && url.scheme != "http") {
-                        if UIApplication.shared.canOpenURL(url) {
-                            UIApplication.shared.open(url, options: [:], completionHandler: nil)
-                        }
-                    } else if queryItems["sharedCookie"] == "true" {
-                        let vc = PMWebViewController()
-                        vc.pageUrl = url
-                        let nc = UINavigationController(rootViewController: vc)
-                        presentationViewController?.present(nc, animated: true, completion: nil)
+                    let sharedCookie = queryItems["sharedCookie"] == "true"
+                    let openInExternalApp = command == .browseApp
+                    if let delegate = delegate {
+                        delegate.openLink(
+                            url,
+                            sharedCookie: sharedCookie,
+                            openInExternalApp: openInExternalApp,
+                        )
                     } else {
-                        openSafariViewController(url)
+                        openLinkUsingDefault(
+                            url,
+                            sharedCookie: sharedCookie,
+                            openInExternalApp: openInExternalApp,
+                        )
                     }
                 }
             }
@@ -872,8 +883,40 @@ extension PMMapView {
     }
 
     private func openSafariViewController(_ url: URL) {
-        if let _ = delegate {
-            delegate?.openLink(url, sharedCookie: false)
+        if let delegate = delegate {
+            delegate.openLink(url, sharedCookie: false, openInExternalApp: false)
+        } else {
+            openLinkUsingDefault(url, sharedCookie: false, openInExternalApp: false)
+        }
+    }
+
+    /// Runs the SDK's built-in link handler for [url], the same routing
+    /// `browseInApp` / `browseApp` use when no delegate is set. Delegates
+    /// that want to selectively fall back to the SDK can forward into this
+    /// method.
+    ///
+    /// - `openInExternalApp == true` or a non-HTTPS scheme: hand off to
+    ///   `UIApplication.open` (suitable for `tel:` / `mailto:` and
+    ///   `browse.app`).
+    /// - `sharedCookie == true`: present `PMWebViewController` so the
+    ///   session cookies travel with the navigation.
+    /// - Otherwise: present an `SFSafariViewController`.
+    public func openLinkUsingDefault(
+        _ url: URL,
+        sharedCookie: Bool,
+        openInExternalApp: Bool = false
+    ) {
+        if openInExternalApp || (url.scheme != "https" && url.scheme != "http") {
+            if UIApplication.shared.canOpenURL(url) {
+                UIApplication.shared.open(url, options: [:], completionHandler: nil)
+            }
+            return
+        }
+        if sharedCookie {
+            let vc = PMWebViewController()
+            vc.pageUrl = url
+            let nc = UINavigationController(rootViewController: vc)
+            presentationViewController?.present(nc, animated: true, completion: nil)
         } else {
             let vc = SFSafariViewController(url: url)
             presentationViewController?.present(vc, animated: true, completion: nil)
@@ -987,7 +1030,12 @@ extension PMMapView: @preconcurrency CLLocationManagerDelegate {
         if isAlertPresentedForLocationDenied {
             return
         }
-        isAlertPresentedForLocationDenied = true
+
+        guard let presenter = presentationViewController else {
+            // No host to present on — resolve the Promise like cancel would.
+            locationCommandCallback(location: nil, heading: nil)
+            return
+        }
 
         let alertTitle = localizedString(forKey: "PMDeniedTitle")
         let alertMessage = localizedString(forKey: "PMDeniedMessage")
@@ -1010,7 +1058,9 @@ extension PMMapView: @preconcurrency CLLocationManagerDelegate {
         }
         alert.addAction(cancelAction)
 
-        presentationViewController?.present(alert, animated: true, completion: nil)
+        presenter.present(alert, animated: true) { [weak self] in
+            self?.isAlertPresentedForLocationDenied = true
+        }
     }
 
     /// Variant of `presentAlertForLocationDenied` that resolves the in-flight
@@ -1019,7 +1069,11 @@ extension PMMapView: @preconcurrency CLLocationManagerDelegate {
         if isAlertPresentedForLocationDenied {
             return
         }
-        isAlertPresentedForLocationDenied = true
+
+        guard let presenter = presentationViewController else {
+            beaconCommandCallback(beacons: nil, hasError: true)
+            return
+        }
 
         let alertTitle = localizedString(forKey: "PMDeniedTitle")
         let alertMessage = localizedString(forKey: "PMDeniedMessage")
@@ -1042,7 +1096,9 @@ extension PMMapView: @preconcurrency CLLocationManagerDelegate {
         }
         alert.addAction(cancelAction)
 
-        presentationViewController?.present(alert, animated: true, completion: nil)
+        presenter.present(alert, animated: true) { [weak self] in
+            self?.isAlertPresentedForLocationDenied = true
+        }
     }
 
     /// Shows the "Location Services restricted" alert (parental controls,
@@ -1052,7 +1108,10 @@ extension PMMapView: @preconcurrency CLLocationManagerDelegate {
         if isAlertPresentedForLocationRestricted {
             return
         }
-        isAlertPresentedForLocationRestricted = true
+
+        guard let presenter = presentationViewController else {
+            return
+        }
 
         let alertTitle = localizedString(forKey: "PMRestrictedTitle")
         let alertMessage = localizedString(forKey: "PMRestrictedMessage")
@@ -1064,7 +1123,9 @@ extension PMMapView: @preconcurrency CLLocationManagerDelegate {
         }
         alert.addAction(okAction)
 
-        presentationViewController?.present(alert, animated: true, completion: nil)
+        presenter.present(alert, animated: true) { [weak self] in
+            self?.isAlertPresentedForLocationRestricted = true
+        }
     }
 
     private func stopLocationRequestIfNoRequest() {

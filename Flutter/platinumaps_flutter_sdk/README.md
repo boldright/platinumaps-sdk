@@ -155,9 +155,9 @@ with overlay composition and `onOpenLink` plumbing lives in
 | `queryParams` | Extra query string entries on the map URL (keys are interpreted by the web layer — see the Platinumaps web docs) | ✓ | ✓ |
 | `locale` | Forces the map UI language | ✓ | ✓ |
 | `appStoreId` | App Store ID consumed by `app.review` | ✓ | — |
-| `userId` | Opaque user identifier exposed to the web layer | ✓ | — |
-| `secretKey` | Opaque shared secret exposed to the web layer | ✓ | — |
-| `offsetBottom` | Flag-style switch: non-zero tells the web layer to treat the bottom safe-area inset as `0` (the integer value is not used as a pixel distance — only its zero/non-zero quality matters today) | ✓ | — |
+| `userId` | Opaque user identifier exposed to the web layer | ✓ | ✓ |
+| `secretKey` | Opaque shared secret exposed to the web layer | ✓ | ✓ |
+| `offsetBottom` | Flag-style switch: non-zero tells the web layer to treat the bottom safe-area inset as `0` (the integer value is not used as a pixel distance — only its zero/non-zero quality matters today) | ✓ | ✓ |
 | `beacon` | iBeacon ranging configuration | ✓ | ✓ |
 | `launchUrl` | Deep link forwarded to the web layer at first load | ✓ | ✓ |
 | `controller` | [`PlatinumapsMapController`](#updating-configuration-at-runtime) handle for runtime operations | ✓ | ✓ |
@@ -258,11 +258,10 @@ swapping that closure never requires a rebuild.
   Flutter plugin does not yet expose them. Until then, hosts that
   emit shared-cookie links (e.g. stamp-rally reward downloads) must
   wire up a cookie-sharing in-app WebView themselves.
-- **Some configuration fields are iOS-only.** `appStoreId`, `userId`,
-  `secretKey`, and `offsetBottom` are ignored on Android because the
-  bundled native Android SDK has no equivalent `app.info` /
-  `app.review` / safe-area plumbing yet. `launchUrl` and the
-  `PlatinumapsMapController` methods work on both platforms.
+- **`appStoreId` is iOS-only.** It drives `UIApplication.open` against
+  the App Store review page; the Android SDK uses the Play Store URL
+  resolved from the application id, so the field is ignored on
+  Android.
 
 ## Sample app
 

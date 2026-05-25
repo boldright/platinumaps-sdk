@@ -47,19 +47,22 @@ final class PlatinumapsPlatformView: NSObject, FlutterPlatformView, PMMapViewDel
         )
         super.init()
 
-        // Only claim PMMapViewDelegate when the Dart side actually has
-        // an `onOpenLink` handler. Setting the delegate unconditionally
-        // would suppress PMMapView's default link handling
-        // (`SFSafariViewController` for HTTPS, `UIApplication.open` for
-        // other allowlisted schemes), causing every browse.* / map.navigate
-        // link to be silently dropped when the host did not supply a
-        // callback.
-        if args?["hasOpenLinkHandler"] as? Bool == true {
-            mv.delegate = self
-        }
+        // Always claim the delegate. The Dart side decides per-call
+        // whether to handle the link or return 'fallback' to delegate
+        // back to PMMapView's built-in routing.
+        mv.delegate = self
 
         methodChannel.setMethodCallHandler { [weak self] call, result in
-            self?.handle(call, result: result)
+            guard let self else {
+                // `result` must be invoked or the Dart Future hangs.
+                result(FlutterError(
+                    code: "platform_view_disposed",
+                    message: "PlatinumapsPlatformView is no longer alive",
+                    details: nil
+                ))
+                return
+            }
+            self.handle(call, result: result)
         }
     }
 
@@ -108,9 +111,34 @@ final class PlatinumapsPlatformView: NSObject, FlutterPlatformView, PMMapViewDel
     ) {
         mapView.mapSlug = args?["mapSlug"] as? String
 
-        if let queryParams = args?["queryParams"] as? [String: String] {
-            mapView.mapQuery = queryParams
+        // Match the wire format the native Android SDK uses: it appends
+        // `beaconminsample` / `beaconmaxhistory` / `memo` URL query
+        // parameters during `openPlatinumaps`. iOS PMMapView has no
+        // public API for these optional fields, so fold them into
+        // `mapQuery`. Caller-supplied `queryParams` are merged last so
+        // a clashing key (e.g. `memo`) keeps the public-API value.
+        var mapQuery: [String: String] = [:]
+        if let beacon = args?["beacon"] as? [String: Any] {
+            if let uuid = beacon["uuid"] as? String {
+                mapView.beaconUuid = uuid
+            }
+            if let minSample = beacon["minSample"] as? Int {
+                mapQuery["beaconminsample"] = String(minSample)
+            }
+            if let maxHistory = beacon["maxHistory"] as? Int {
+                mapQuery["beaconmaxhistory"] = String(maxHistory)
+            }
+            if let memo = beacon["memo"] as? String {
+                mapQuery["memo"] = memo
+            }
         }
+        if let queryParams = args?["queryParams"] as? [String: String] {
+            for (key, value) in queryParams {
+                mapQuery[key] = value
+            }
+        }
+        mapView.mapQuery = mapQuery
+
         if let localeCode = args?["locale"] as? String,
            let locale = PMLocale(rawValue: localeCode) {
             mapView.mapLocale = locale
@@ -126,28 +154,6 @@ final class PlatinumapsPlatformView: NSObject, FlutterPlatformView, PMMapViewDel
         }
         if let offsetBottom = args?["offsetBottom"] as? Int {
             mapView.offsetBottom = offsetBottom
-        }
-        if let beacon = args?["beacon"] as? [String: Any] {
-            if let uuid = beacon["uuid"] as? String {
-                mapView.beaconUuid = uuid
-            }
-            // Match the wire format the native Android SDK uses: it
-            // appends `beaconminsample` / `beaconmaxhistory` / `memo`
-            // URL query parameters during `openPlatinumaps`. iOS
-            // PMMapView has no public API for these optional fields,
-            // so fold them into `mapQuery` so the same parameters
-            // reach the web layer regardless of platform.
-            var extras = mapView.mapQuery
-            if let minSample = beacon["minSample"] as? Int {
-                extras["beaconminsample"] = String(minSample)
-            }
-            if let maxHistory = beacon["maxHistory"] as? Int {
-                extras["beaconmaxhistory"] = String(maxHistory)
-            }
-            if let memo = beacon["memo"] as? String {
-                extras["memo"] = memo
-            }
-            mapView.mapQuery = extras
         }
         if let launchUrlString = args?["launchUrl"] as? String,
            let launchUrl = Self.parseLaunchUrl(launchUrlString),
@@ -185,12 +191,25 @@ final class PlatinumapsPlatformView: NSObject, FlutterPlatformView, PMMapViewDel
     // MARK: - PMMapViewDelegate
 
     func openLink(_ url: URL, sharedCookie: Bool) {
+        openLink(url, sharedCookie: sharedCookie, openInExternalApp: false)
+    }
+
+    func openLink(_ url: URL, sharedCookie: Bool, openInExternalApp: Bool) {
         methodChannel.invokeMethod(
             "onOpenLink",
             arguments: [
                 "url": url.absoluteString,
                 "sharedCookie": sharedCookie,
             ]
-        )
+        ) { [weak self] reply in
+            guard let self else { return }
+            if (reply as? String) == "fallback" {
+                self.mapView.openLinkUsingDefault(
+                    url,
+                    sharedCookie: sharedCookie,
+                    openInExternalApp: openInExternalApp,
+                )
+            }
+        }
     }
 }

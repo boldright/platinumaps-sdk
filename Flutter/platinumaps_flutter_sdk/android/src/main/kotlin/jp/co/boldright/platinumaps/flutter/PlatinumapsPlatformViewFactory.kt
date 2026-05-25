@@ -68,6 +68,9 @@ internal class PlatinumapsPlatformViewFactory(
     }
 
     fun forwardActivityDestroy() {
+        // Drop entries so a later forwardActivityResume cannot walk
+        // back into destroyed PmWebViews on a config-change race.
         activeViews.values.forEach { it.activityDestroy() }
+        activeViews.clear()
     }
 }

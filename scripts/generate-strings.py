@@ -3,11 +3,13 @@
 
 Outputs:
     iOS/platinumaps-sdk/Types/PMLocalizedStrings.swift
+    Flutter/platinumaps_flutter_sdk/ios/.../PlatinumapsSDK/Types/PMLocalizedStrings.swift
     Android/platinumaps-sdk/src/main/res/values/strings.xml
     Android/platinumaps-sdk/src/main/res/values-ja/strings.xml
     Android/platinumaps-sdk/src/main/res/values-ko/strings.xml
     Android/platinumaps-sdk/src/main/res/values-b+zh+Hans/strings.xml
     Android/platinumaps-sdk/src/main/res/values-b+zh+Hant/strings.xml
+    (plus byte-identical copies under Android/sample/platinumaps-sdk/.)
 
 Run from the repo root after editing `i18n/strings.yaml`:
 
@@ -32,7 +34,15 @@ except ImportError:
 REPO_ROOT = Path(__file__).resolve().parent.parent
 YAML_PATH = REPO_ROOT / "i18n" / "strings.yaml"
 
-IOS_OUTPUT = REPO_ROOT / "iOS" / "platinumaps-sdk" / "Types" / "PMLocalizedStrings.swift"
+# CLAUDE.md requires `iOS/platinumaps-sdk/` and the Flutter plugin's
+# `Sources/PlatinumapsSDK/` mirror to stay byte-identical, so the
+# generator writes the same Swift source to both trees.
+IOS_OUTPUTS = [
+    REPO_ROOT / "iOS" / "platinumaps-sdk" / "Types" / "PMLocalizedStrings.swift",
+    REPO_ROOT / "Flutter" / "platinumaps_flutter_sdk" / "ios"
+    / "platinumaps_flutter_sdk" / "Sources" / "PlatinumapsSDK" / "Types"
+    / "PMLocalizedStrings.swift",
+]
 
 # CLAUDE.md requires `Android/platinumaps-sdk/` and
 # `Android/sample/platinumaps-sdk/` to stay byte-identical, so the
@@ -230,8 +240,9 @@ def main() -> int:
 
     swift_source = render_ios(entries)
     changed_files = []
-    if write_if_changed(IOS_OUTPUT, swift_source):
-        changed_files.append(IOS_OUTPUT)
+    for ios_output in IOS_OUTPUTS:
+        if write_if_changed(ios_output, swift_source):
+            changed_files.append(ios_output)
 
     for language, subdir in ANDROID_VALUES_DIRS.items():
         xml_source = render_android(entries, language)

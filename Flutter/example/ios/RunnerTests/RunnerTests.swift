@@ -133,6 +133,26 @@ final class PlatinumapsPlatformViewTests: XCTestCase {
         XCTAssertEqual(mapView.mapQuery["memo"], "demo-zone")
     }
 
+    func test_userQueryParamWinsOverBeaconMemo() throws {
+        // `memo` is exposed both as a `queryParams` entry (public Dart
+        // API) and as a beacon-tuning field. When the host sets both
+        // the explicit `queryParams` value must reach the wire.
+        let mapView = PMMapView(frame: .zero)
+        PlatinumapsPlatformView.applyCreationArguments(
+            [
+                "mapSlug": "demo",
+                "queryParams": ["memo": "host-tag"],
+                "beacon": [
+                    "uuid": "01234567-89AB-CDEF-0123-456789ABCDEF",
+                    "memo": "beacon-tag",
+                ],
+            ],
+            to: mapView
+        )
+
+        XCTAssertEqual(mapView.mapQuery["memo"], "host-tag")
+    }
+
     func test_launchUrlIsParsedAndAppliedWhenValid() throws {
         let mapView = PMMapView(frame: .zero)
         PlatinumapsPlatformView.applyCreationArguments(

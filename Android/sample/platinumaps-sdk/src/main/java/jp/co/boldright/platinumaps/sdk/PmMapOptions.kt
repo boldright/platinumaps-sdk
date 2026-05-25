@@ -13,13 +13,19 @@ package jp.co.boldright.platinumaps.sdk
  * pixels. Forwarded to the web layer. Defaults to `0`.
  * @property beacon Beacon configuration. Pass `null` to disable beacon
  * scanning entirely.
+ * @property userId Opaque user identifier the web app may consume via the
+ * `app.info` command. Defaults to `null`.
+ * @property secretKey Opaque shared secret the web app may consume via the
+ * `app.info` command. Defaults to `null`.
  */
 data class PmMapOptions(
     val mapPath: String,
     val queryParams: Map<String, String>? = null,
     val safeAreaTop: Int = 0,
     val safeAreaBottom: Int = 0,
-    val beacon: PmMapBeaconOptions? = null
+    val beacon: PmMapBeaconOptions? = null,
+    val userId: String? = null,
+    val secretKey: String? = null,
 )
 
 /**

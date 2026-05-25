@@ -113,16 +113,26 @@ class PlatinumapsPlatformViewTest {
     }
 
     @Test
-    fun `iOS-only fields are silently ignored on Android`() {
-        // These keys exist in the Dart creation args but have no
-        // Android counterpart; the parser should ignore them rather
-        // than throw.
+    fun `userId and secretKey flow into PmMapOptions`() {
+        val options = PlatinumapsPlatformView.buildMapOptions(
+            mapOf(
+                "mapSlug" to "demo",
+                "userId" to "u-1",
+                "secretKey" to "s-1",
+            ),
+        )
+        assertEquals("u-1", options.userId)
+        assertEquals("s-1", options.secretKey)
+    }
+
+    @Test
+    fun `appStoreId launchUrl offsetBottom are not echoed into PmMapOptions`() {
+        // These keys are consumed elsewhere (iOS-only or by the init
+        // block); the parser should not invent fields for them.
         val options = PlatinumapsPlatformView.buildMapOptions(
             mapOf(
                 "mapSlug" to "demo",
                 "appStoreId" to "1234567890",
-                "userId" to "u-1",
-                "secretKey" to "s-1",
                 "offsetBottom" to 24,
                 "launchUrl" to "https://platinumaps.jp/maps/demo",
             ),
@@ -130,6 +140,19 @@ class PlatinumapsPlatformViewTest {
         assertEquals("demo", options.mapPath)
         assertNull(options.queryParams)
         assertNull(options.beacon)
+        assertNull(options.userId)
+        assertNull(options.secretKey)
+    }
+
+    @Test
+    fun `safe-area arguments override the defaults`() {
+        val options = PlatinumapsPlatformView.buildMapOptions(
+            args = mapOf("mapSlug" to "demo"),
+            safeAreaTop = 48,
+            safeAreaBottom = 16,
+        )
+        assertEquals(48, options.safeAreaTop)
+        assertEquals(16, options.safeAreaBottom)
     }
 
     @Test

@@ -24,13 +24,12 @@ typedef PlatinumapsOpenLinkCallback =
 /// Embeds the Platinumaps web map as a Flutter widget.
 ///
 /// The widget hosts the platform-native WebView via a `PlatformView`.
-/// Configuration values are passed to the native side at construction
-/// time; the [onOpenLink] closure is re-read on every rebuild, but
-/// other constructor fields require rebuilding the widget with a new
-/// key to take effect. For runtime operations that must not lose the
-/// WebView state (scroll position, session cookies, …) attach a
-/// [PlatinumapsMapController] through [controller] and call its
-/// methods.
+/// Configuration values are consumed at construction; later rebuilds
+/// do not propagate (rebuild with a new key to change them). The one
+/// exception is [onOpenLink], which is re-read on every callback. For
+/// runtime operations that must not lose the WebView state (scroll
+/// position, session cookies, …) attach a [PlatinumapsMapController]
+/// through [controller] and call its methods.
 class PlatinumapsMapView extends StatefulWidget {
   /// Creates a Platinumaps map widget.
   const PlatinumapsMapView({
@@ -46,7 +45,7 @@ class PlatinumapsMapView extends StatefulWidget {
     this.launchUrl,
     this.onOpenLink,
     this.controller,
-  });
+  }) : assert(mapSlug != '', 'mapSlug must not be empty');
 
   /// The map identifier appended to `https://platinumaps.jp/maps/`.
   ///
@@ -103,20 +102,18 @@ class PlatinumapsMapView extends StatefulWidget {
   final Uri? launchUrl;
 
   /// Invoked when the embedded web map asks the host to open a URL
-  /// outside the WebView.
+  /// outside the WebView. Re-read on every callback, so it is safe to
+  /// swap in a non-null handler on a later rebuild.
   ///
-  /// When `null`, behaviour depends on the platform:
+  /// When `null`, the SDK falls back to its built-in handling:
   ///
-  /// * iOS — the native SDK's defaults apply:
-  ///   `SFSafariViewController` for HTTPS/HTTP and `UIApplication.open`
-  ///   for the other allowlisted schemes (`tel`, `mailto`, `sms`,
-  ///   `geo`).
-  /// * Android — `browse.inapp` (non-shared-cookie) links open via
-  ///   Chrome Custom Tabs. `browse.app`, `map.navigate`, and
-  ///   shared-cookie `browse.inapp` links are silently dropped: the
-  ///   native Android SDK delegates those to the listener and has no
-  ///   internal fallback. Supply a callback if your maps emit any of
-  ///   those commands.
+  /// * iOS — `SFSafariViewController` for HTTPS/HTTP (a navigation
+  ///   stack with shared cookies for shared-cookie links) and
+  ///   `UIApplication.open` for the other allowlisted schemes
+  ///   (`tel`, `mailto`, `sms`, `geo`).
+  /// * Android — Chrome Custom Tabs for HTTPS/HTTP. Other allowlisted
+  ///   schemes are silently dropped (the bundled native SDK has no
+  ///   external-app launcher today).
   final PlatinumapsOpenLinkCallback? onOpenLink;
 
   /// Optional imperative handle. Attach one to drive the map at
@@ -164,12 +161,6 @@ class _PlatinumapsMapViewState extends State<PlatinumapsMapView> {
       'offsetBottom': widget.offsetBottom,
       if (widget.beacon != null) 'beacon': widget.beacon!.toMap(),
       if (widget.launchUrl != null) 'launchUrl': widget.launchUrl!.toString(),
-      // The native plugins consult this flag at creation time to decide
-      // whether to attach themselves as the SDK's openLink listener.
-      // Attaching unconditionally would suppress the native SDK's
-      // default link-handling fallbacks (SFSafariViewController on iOS,
-      // Custom Tabs on Android) whenever the host omits onOpenLink.
-      'hasOpenLinkHandler': widget.onOpenLink != null,
     };
   }
 
@@ -183,20 +174,22 @@ class _PlatinumapsMapViewState extends State<PlatinumapsMapView> {
   Future<Object?> _handleMethodCall(MethodCall call) async {
     switch (call.method) {
       case 'onOpenLink':
+        // Returning 'fallback' tells the native side to run the SDK's
+        // default link handler. Any other reply (null or a Map) means
+        // the host claimed the link.
         final callback = widget.onOpenLink;
-        if (callback == null) return null;
+        if (callback == null) return 'fallback';
         // The platform channel can deliver `null`, a `Map<dynamic,
         // dynamic>`, or unexpected types from a misbehaving native
         // side. Tolerate all of them by bailing out cleanly instead
         // of throwing into the platform channel runtime.
         final rawArgs = call.arguments;
-        if (rawArgs is! Map) return null;
-        final args = Map<String, Object?>.from(rawArgs);
-        final urlString = args['url'];
-        if (urlString is! String) return null;
+        if (rawArgs is! Map) return 'fallback';
+        final urlString = rawArgs['url'];
+        if (urlString is! String) return 'fallback';
         final uri = Uri.tryParse(urlString);
-        if (uri == null) return null;
-        final sharedCookie = args['sharedCookie'] == true;
+        if (uri == null) return 'fallback';
+        final sharedCookie = rawArgs['sharedCookie'] == true;
         callback(uri, sharedCookie: sharedCookie);
         return null;
       default:

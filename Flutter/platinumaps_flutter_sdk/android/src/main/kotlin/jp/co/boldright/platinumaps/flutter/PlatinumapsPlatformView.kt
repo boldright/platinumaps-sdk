@@ -1,9 +1,13 @@
 package jp.co.boldright.platinumaps.flutter
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import android.view.View
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -37,19 +41,24 @@ internal class PlatinumapsPlatformView(
     private var hasDestroyedWebView = false
 
     init {
-        // Only claim the SDK's OnOpenLinkListener when the Dart side
-        // actually has an `onOpenLink` callback. Leaving the listener
-        // unset preserves the native SDK's default behaviour for the
-        // browse.inapp (non-shared) command, which falls back to
-        // CustomTabs. browse.app, map.navigate, and shared-cookie
-        // browse.inapp links remain undelivered when no host
-        // callback is wired — the native Android SDK has no internal
-        // fallback for those code paths today.
-        if (args?.get("hasOpenLinkHandler") as? Boolean == true) {
-            webView.onOpenLinkListener = this
-        }
+        // Always claim the listener. The Dart side decides per-call
+        // whether to handle the link or return 'fallback' to delegate
+        // back to PmWebView's built-in routing.
+        webView.onOpenLinkListener = this
         methodChannel.setMethodCallHandler { call, result -> handle(call, result) }
-        webView.openPlatinumaps(buildMapOptions(args))
+
+        val offsetBottom = (args?.get("offsetBottom") as? Number)?.toInt() ?: 0
+        val (safeAreaTop, safeAreaBottom) = resolveSafeAreaInsets(
+            context = context,
+            zeroBottom = offsetBottom > 0,
+        )
+        webView.openPlatinumaps(
+            buildMapOptions(
+                args = args,
+                safeAreaTop = safeAreaTop,
+                safeAreaBottom = safeAreaBottom,
+            ),
+        )
 
         // The native Android SDK's `PmMapOptions` has no `launchUrl`
         // field today, so we can't fold this into `buildMapOptions`.
@@ -113,6 +122,28 @@ internal class PlatinumapsPlatformView(
         }
 
         /**
+         * Resolves the system-bar + display-cutout insets from the host
+         * Activity's decor view, so the WebView can lay out under
+         * status bar / nav bar / notch the same way the iOS path does.
+         * `zeroBottom` reflects the Dart-side `offsetBottom` flag: when
+         * the host already draws a bottom inset (e.g. a tab bar) the
+         * map should ignore the system one.
+         */
+        internal fun resolveSafeAreaInsets(
+            context: Context,
+            zeroBottom: Boolean,
+        ): Pair<Int, Int> {
+            val activity = context as? Activity ?: return Pair(0, 0)
+            val rootInsets = ViewCompat.getRootWindowInsets(activity.window.decorView)
+                ?: return Pair(0, 0)
+            val systemInsets = rootInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars()
+                    or WindowInsetsCompat.Type.displayCutout(),
+            )
+            return Pair(systemInsets.top, if (zeroBottom) 0 else systemInsets.bottom)
+        }
+
+        /**
          * Translates the creation arguments the Dart side sends through
          * the platform channel into a [PmMapOptions] the native SDK
          * understands. Exposed at companion scope (rather than buried in
@@ -127,14 +158,22 @@ internal class PlatinumapsPlatformView(
          * app honours an explicit `culture=` override regardless of
          * platform.
          *
-         * `offsetBottom`, `launchUrl`, `userId`, `secretKey`, and
-         * `appStoreId` are accepted by the Dart API for forward
-         * compatibility but the existing [PmMapOptions] does not
-         * have first-class fields for them on Android. The Flutter
-         * README documents the asymmetry.
+         * `launchUrl`, `appStoreId`, and `offsetBottom` (the flag-only
+         * value) are consumed by the init block, not here. Safe-area
+         * insets are resolved by the caller and passed in.
          */
-        internal fun buildMapOptions(args: Map<String, Any?>?): PmMapOptions {
+        internal fun buildMapOptions(
+            args: Map<String, Any?>?,
+            safeAreaTop: Int = 0,
+            safeAreaBottom: Int = 0,
+        ): PmMapOptions {
             val mapSlug = (args?.get("mapSlug") as? String).orEmpty()
+            if (mapSlug.isEmpty()) {
+                Log.w(
+                    "PlatinumapsFlutter",
+                    "mapSlug is empty; the WebView will load /maps/ and 404.",
+                )
+            }
             // The Dart side declares `Map<String, String>?` for
             // queryParams, but the platform channel runtime erases the
             // generics: what arrives at the JVM is a `Map<*, *>` whose
@@ -176,9 +215,11 @@ internal class PlatinumapsPlatformView(
             return PmMapOptions(
                 mapPath = mapSlug,
                 queryParams = queryParams,
-                safeAreaTop = 0,
-                safeAreaBottom = 0,
+                safeAreaTop = safeAreaTop,
+                safeAreaBottom = safeAreaBottom,
                 beacon = beaconOptions,
+                userId = args?.get("userId") as? String,
+                secretKey = args?.get("secretKey") as? String,
             )
         }
     }
@@ -229,12 +270,25 @@ internal class PlatinumapsPlatformView(
     }
 
     override fun onOpenLink(url: Uri, sharedCookie: Boolean) {
+        onOpenLink(url, sharedCookie, openInExternalApp = false)
+    }
+
+    override fun onOpenLink(url: Uri, sharedCookie: Boolean, openInExternalApp: Boolean) {
         methodChannel.invokeMethod(
             "onOpenLink",
             mapOf(
                 "url" to url.toString(),
                 "sharedCookie" to sharedCookie,
             ),
+            object : MethodChannel.Result {
+                override fun success(result: Any?) {
+                    if (result == "fallback") {
+                        webView.openLinkUsingDefault(url, sharedCookie, openInExternalApp)
+                    }
+                }
+                override fun error(code: String, message: String?, details: Any?) {}
+                override fun notImplemented() {}
+            },
         )
     }
 
