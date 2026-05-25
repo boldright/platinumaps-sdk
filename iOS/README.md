@@ -2,8 +2,8 @@
 
 ## Requirements
 
-- Swift 6.0+
-- Xcode 16.0+
+- Swift 6.2+
+- Xcode 26.0+
 - iOS 16.0+
 
 ## Installation
