@@ -99,6 +99,15 @@ android {
             )
         }
     }
+
+    // Allow plain JVM unit tests to call `android.util.Log.w(...)`
+    // without Robolectric — the calls become no-ops instead of throwing
+    // `Method ... not mocked`.
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 // Configure the Kotlin compile tasks directly instead of via the
