@@ -23,7 +23,7 @@ internal class PlatinumapsPlatformView(
     private val viewId: Int,
     args: Map<String, Any?>?,
     private val onDispose: (Int) -> Unit,
-) : PlatformView, PmWebView.OnOpenLinkListener {
+) : PlatformView, PmWebView.OnOpenLinkRoutingListener {
 
     private val webView: PmWebView = PmWebView(context)
     private val methodChannel: MethodChannel = MethodChannel(
@@ -228,10 +228,6 @@ internal class PlatinumapsPlatformView(
         if (hasDestroyedWebView) return
         hasDestroyedWebView = true
         webView.activityDestroy()
-    }
-
-    override fun onOpenLink(url: Uri, sharedCookie: Boolean) {
-        onOpenLink(url, sharedCookie, openInExternalApp = false)
     }
 
     override fun onOpenLink(url: Uri, sharedCookie: Boolean, openInExternalApp: Boolean) {

@@ -18,7 +18,7 @@ package jp.co.boldright.platinumaps.sdk
  * @property secretKey Opaque shared secret the web app may consume via the
  * `app.info` command. Defaults to `null`.
  */
-data class PmMapOptions(
+data class PmMapOptions @JvmOverloads constructor(
     val mapPath: String,
     val queryParams: Map<String, String>? = null,
     val safeAreaTop: Int = 0,
@@ -40,7 +40,7 @@ data class PmMapOptions(
  * @property memo Optional. Free-form string forwarded to the map for
  * diagnostic / debugging purposes.
  */
-data class PmMapBeaconOptions(
+data class PmMapBeaconOptions @JvmOverloads constructor(
     val uuid: String,
     val minSample: Int? = null,
     val maxHistory: Int? = null,

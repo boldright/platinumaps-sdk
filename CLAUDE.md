@@ -133,6 +133,41 @@ scheme is in `{ http, https, tel, mailto, sms, geo }`. Anything else
 reaching the system. This is a defence-in-depth against a compromised web
 layer trying to escalate via the native app.
 
+### Android `browse.*` listener routing
+
+The Android SDK exposes two listener interfaces:
+
+- `PmWebView.OnOpenLinkListener` (v1): receives `browse.app`,
+  `browse.inapp` with `sharedCookie=true`, and `map.navigate`. **It
+  does not receive `browse.inapp` with `sharedCookie=false`** — those
+  URLs are handed to Chrome Custom Tabs by the SDK itself. This
+  preserves the contract on which v1 sample code relies (a
+  `sharedCookie=false` callback always implies an external-app
+  launch).
+- `PmWebView.OnOpenLinkRoutingListener` (v2): inherits from the v1
+  listener and adds a 3-argument `onOpenLink` that fires for every
+  `browse.*` / `map.navigate` event, including `browse.inapp` with
+  `sharedCookie=false`. The extra `openInExternalApp` flag is `true`
+  for `browse.app` / `map.navigate` and `false` for `browse.inapp`,
+  letting hosts distinguish "leave the app" from "stay in-app" — a
+  distinction the v1 2-arg signature could not express.
+
+`PmWebView` dispatches via `is OnOpenLinkRoutingListener` at runtime,
+so existing v1 hosts continue to work unchanged. The Flutter Android
+plugin implements `OnOpenLinkRoutingListener` so the Dart-side
+`onOpenLink` callback can be symmetric with iOS, where the delegate
+has always received every `browse.*` event.
+
+iOS does not need the two-interface split because the v1
+`PMMainViewControllerDelegate` already routed every `browse.*` event
+through the delegate — the iOS sample's `sharedCookie=false` branch
+opens an `SFSafariViewController` (in-app overlay), which is the right
+thing to do for both `browse.app` and `browse.inapp + sharedCookie=
+false`, so back-compat is preserved without an interface change.
+`PMMapViewDelegate` exposes both 2-arg and 3-arg `openLink` methods
+with the 3-arg variant defaulting to the 2-arg one; hosts that want
+the `openInExternalApp` flag override the 3-arg variant.
+
 ## Lifecycle contract
 
 ### iOS
@@ -230,6 +265,7 @@ down — call it exactly once per WebView instance.
 | Tweak the permission allowlist for `browse.*` | `browseAllowedSchemes` in `Views/PMMapView.swift` | `browseAllowedSchemes` in `PmWebView.kt` |
 | Add a new locale to the `culture` enum | `Types/PMLocale.swift` | n/a — Android derives `culture` from `Accept-Language` (the Flutter plugin folds `locale` into the `culture` query parameter to bridge the gap) |
 | Add a new public API property | `Views/PMMapView.swift` *and* the forwarding shim in `ViewControllers/PMMainViewController.swift` | `PmWebView.kt` (plus the Flutter plugin's `PlatinumapsPlatformView.kt` if it needs Dart exposure) |
+| Change how a `browse.*` event is routed to the host | `runCommand` switch + `delegate.openLink` call in `Views/PMMapView.swift` | `openWebBrowse{InApp,Activity,App}` in `PmWebView.kt`; the v1 / v2 split lives in `OnOpenLinkListener` and `OnOpenLinkRoutingListener` at the bottom of the same file |
 
 When you change the canonical Android SDK module, copy the same files into
 `Android/sample/platinumaps-sdk/` (the trees must stay identical) and
