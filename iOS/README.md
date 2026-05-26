@@ -119,6 +119,8 @@ extension HostViewController: PMMainViewControllerDelegate {
 | `userId` | `String?` | — | Opaque user id forwarded via `app.info`. |
 | `secretKey` | `String?` | — | Shared secret forwarded via `app.info`. Treat as sensitive. |
 | `offsetBottom` | `Int` | — | When `> 0`, the SDK reports the bottom safe-area inset as `0` (e.g. when the host adds its own bottom inset). |
+| `safeAreaTopOverride` | `Int?` | — | When set, used instead of `safeAreaInsets.top`. Pass an explicit value when `PMMainViewController` is embedded via `addChild` or presented as `.fullScreen`, where the auto-detected inset can read `0` on first attach. |
+| `safeAreaBottomOverride` | `Int?` | — | Companion to `safeAreaTopOverride` for the bottom inset. |
 | `launchURL` | `URL?` | — | URL captured from a Universal Link / Custom URL Scheme launch, replayed once `web.ready` fires. |
 | `beaconUuid` | `String?` | — | Hyphenated iBeacon proximity UUID. Invalid UUIDs disable beacons silently. |
 | `isWebViewInspectable` | `Bool` | — | Enables WebKit Inspector (`isInspectable`, iOS 16.4+). Off by default. |
