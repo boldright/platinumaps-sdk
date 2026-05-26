@@ -311,8 +311,9 @@ public class PMMapView: UIView {
         guard window != nil, isFirstAttach else {
             return
         }
-        isFirstAttach = false
-        performFirstAttachSetup()
+        if performFirstAttachSetup() {
+            isFirstAttach = false
+        }
     }
 
     public override func layoutSubviews() {
@@ -334,7 +335,7 @@ public class PMMapView: UIView {
     /// registers foreground / background observers. The actual URL build
     /// + load is delayed to [loadInitialURL] so we can read post-layout
     /// `safeAreaInsets`.
-    private func performFirstAttachSetup() {
+    private func performFirstAttachSetup() -> Bool {
         // An empty or nil `mapSlug` cannot resolve to a valid map URL.
         // Bail out with a logged warning instead of crashing the host
         // app: Dart consumers can construct a `PlatinumapsMapView` with
@@ -343,7 +344,7 @@ public class PMMapView: UIView {
         // contract.
         guard let mapSlug = mapSlug, !mapSlug.isEmpty else {
             Self.retryLog.error("PMMapView: mapSlug is empty; the view will not load any map.")
-            return
+            return false
         }
 
         let webViewConfig = WKWebViewConfiguration()
@@ -393,6 +394,7 @@ public class PMMapView: UIView {
                                                selector: #selector(didEnterBackgroundNotification(_:)),
                                                name: UIApplication.didEnterBackgroundNotification,
                                                object: nil)
+        return true
     }
 
     /// Builds the map URL with post-layout safe-area insets and triggers
@@ -798,13 +800,13 @@ extension PMMapView {
                             sharedCookie: sharedCookie,
                             openInExternalApp: openInExternalApp,
                         )
-                    } else {
-                        openLinkUsingDefault(
-                            url,
-                            sharedCookie: sharedCookie,
-                            openInExternalApp: openInExternalApp,
-                        )
+                        return
                     }
+                    openLinkUsingDefault(
+                        url,
+                        sharedCookie: sharedCookie,
+                        openInExternalApp: openInExternalApp,
+                    )
                 }
             }
             break
@@ -1101,9 +1103,8 @@ extension PMMapView: @preconcurrency CLLocationManagerDelegate {
         }
         alert.addAction(cancelAction)
 
-        presenter.present(alert, animated: true) { [weak self] in
-            self?.isAlertPresentedForLocationDenied = true
-        }
+        isAlertPresentedForLocationDenied = true
+        presenter.present(alert, animated: true, completion: nil)
     }
 
     /// Variant of `presentAlertForLocationDenied` that resolves the in-flight
@@ -1139,9 +1140,8 @@ extension PMMapView: @preconcurrency CLLocationManagerDelegate {
         }
         alert.addAction(cancelAction)
 
-        presenter.present(alert, animated: true) { [weak self] in
-            self?.isAlertPresentedForLocationDenied = true
-        }
+        isAlertPresentedForLocationDenied = true
+        presenter.present(alert, animated: true, completion: nil)
     }
 
     /// Shows the "Location Services restricted" alert (parental controls,
@@ -1166,9 +1166,8 @@ extension PMMapView: @preconcurrency CLLocationManagerDelegate {
         }
         alert.addAction(okAction)
 
-        presenter.present(alert, animated: true) { [weak self] in
-            self?.isAlertPresentedForLocationRestricted = true
-        }
+        isAlertPresentedForLocationRestricted = true
+        presenter.present(alert, animated: true, completion: nil)
     }
 
     private func stopLocationRequestIfNoRequest() {
