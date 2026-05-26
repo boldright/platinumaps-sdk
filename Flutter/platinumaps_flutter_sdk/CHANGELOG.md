@@ -3,11 +3,10 @@
 All notable changes to this package are documented in this file. The
 format follows [Keep a Changelog](https://keepachangelog.com).
 
-## [Unreleased] — towards 0.1.0
+## [Unreleased] — towards 1.0.0
 
-Initial pre-release for 0.1.0. The API surface is considered unstable
-until 1.0.0. When the release tag is cut, rename this heading to
-`## [0.1.0] - YYYY-MM-DD`.
+Initial release as 1.0.0. When the release tag is cut, rename this
+heading to `## [1.0.0] - YYYY-MM-DD`.
 
 ### Added
 

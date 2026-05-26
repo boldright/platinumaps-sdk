@@ -17,7 +17,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'platinumaps_flutter_sdk'
-  s.version          = '0.1.0'
+  s.version          = '1.0.0'
   s.summary          = 'Flutter SDK for embedding the Platinumaps web map.'
   s.description      = <<-DESC
 Flutter SDK for embedding the Platinumaps web map in a Flutter app.

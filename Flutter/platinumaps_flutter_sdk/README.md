@@ -40,7 +40,7 @@ dependencies:
     path: ../../platinumaps-sdk/Flutter/platinumaps_flutter_sdk
 ```
 
-Once published to pub.dev: `platinumaps_flutter_sdk: ^0.1.0`.
+Once published to pub.dev: `platinumaps_flutter_sdk: ^1.0.0`.
 
 ### 2. iOS deployment target — `ios/Podfile` **and** Xcode
 
