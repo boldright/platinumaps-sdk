@@ -26,14 +26,9 @@ SDK is self-contained — its localized permission-alert strings are
 embedded in `PMLocalizedStrings.swift`, so no resource bundle needs to
 be added to the target's **Copy Bundle Resources** build phase.
 
-> **Upgrading from a pre-`PMLocalizedStrings.swift` build:** earlier
-> versions of the SDK shipped its localized strings as
-> `iOS/platinumaps-sdk/Platinumaps.bundle/`, and the integration guide
-> asked hosts to add that bundle to **Copy Bundle Resources**. The
-> bundle is no longer part of the SDK — when you pull these sources
-> in, remove the stale `Platinumaps.bundle` reference from your
-> target's build phases (and from the project tree) so the missing
-> file does not break the build.
+> If you upgraded from an older SDK that shipped `Platinumaps.bundle/`,
+> remove that stale reference from the target's build phases and
+> project tree — the bundle is gone.
 
 ## Folder structure
 
@@ -178,8 +173,6 @@ actor. There is no need to hop queues from the host.
   `UINavigationController` if you want a close button.
 - It does not request notification permissions, analytics consent, or any
   permission other than location, camera, microphone, and bluetooth.
-- After `web.ready` it stops driving retries itself and trusts the web
-  layer to surface its own retry UI. While the *initial* load is still
-  in flight, the SDK does retry network failures internally with
-  exponential backoff (1, 2, 4, 8, 8, … seconds) — see
-  `scheduleNextRetry` in `Views/PMMapView.swift`.
+- It retries network failures internally only while the initial load
+  is in flight; after `web.ready` retries are the web layer's
+  responsibility.
