@@ -181,7 +181,9 @@ class WebViewActivity : AppCompatActivity(), PmWebView.OnOpenLinkListener {
 | `activityDestroy()` | Tears down the WebView and releases native resources. Call from `onDestroy()`. |
 | `handlePermissionResult(requestCode, grantResults)` | Forwards `onRequestPermissionsResult` results into the SDK. |
 | `handleFileChooserResult(requestCode, resultCode, data)` | Forwards `onActivityResult` results for the file chooser. |
-| `onOpenLinkListener: OnOpenLinkListener?` | Optional. Custom outbound link handling. |
+| `pushLaunchURL(uri: Uri)` | Forwards a URL to the web app at runtime (Universal Link / deep link received after the WebView is on screen). |
+| `openLinkUsingDefault(uri, sharedCookie, openInExternalApp)` | Runs the SDK's built-in link handler. `OnOpenLinkRoutingListener` implementations can call this to selectively fall back to Custom Tabs. |
+| `onOpenLinkListener: OnOpenLinkListener?` | Optional. Custom outbound link handling. Accepts either `OnOpenLinkListener` or `OnOpenLinkRoutingListener`. |
 
 ### `PmMapOptions`
 
@@ -192,6 +194,8 @@ data class PmMapOptions(
     val safeAreaTop: Int = 0,
     val safeAreaBottom: Int = 0,
     val beacon: PmMapBeaconOptions? = null,
+    val userId: String? = null,              // forwarded via `app.info`
+    val secretKey: String? = null,           // forwarded via `app.info`, sensitive
 )
 ```
 

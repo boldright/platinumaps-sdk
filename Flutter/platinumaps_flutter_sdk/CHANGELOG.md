@@ -13,12 +13,12 @@ heading to `## [1.0.0] - YYYY-MM-DD`.
 - `PlatinumapsMapView` widget that embeds the Platinumaps web map via
   a `PlatformView` (`UiKitView` on iOS, `AndroidView` on Android).
   Accepts `mapSlug`, `queryParams`, `locale`, `appStoreId`, `userId`,
-  `secretKey`, `offsetBottom`, `beacon`, `launchUrl`, and an
-  `onOpenLink` callback. The iOS-only parameters are still accepted
-  on Android for forward-compatibility but are silently ignored — see
-  `README.md` for the parity table. The iOS native SDK's `coverImage`
-  is intentionally not exposed; render the splash from the Flutter
-  host instead.
+  `secretKey`, `safeAreaTop`, `safeAreaBottom`, `beacon`, `launchUrl`,
+  and an `onOpenLink` callback. The iOS-only parameters are still
+  accepted on Android for forward-compatibility but are silently
+  ignored — see `README.md` for the parity table. The iOS native
+  SDK's `coverImage` is intentionally not exposed; render the splash
+  from the Flutter host instead.
 - `PlatinumapsMapController` imperative handle. Attach via the
   widget's `controller:` parameter and call `pushLaunchUrl(Uri)` to
   forward a Universal Link / Custom URL Scheme that arrives after
