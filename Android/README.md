@@ -218,16 +218,11 @@ interface OnOpenLinkListener {
 ```
 
 `sharedCookie == true` indicates the link needs the current Platinumaps
-session (typical example: stamp-rally reward downloads). The SDK already
-restricts forwarded URL schemes to `{ http, https, tel, mailto, sms, geo }`;
-the host does not need to filter again.
-
-This v1 listener receives `browse.app`, `browse.inapp` with
-`sharedCookie=true`, and `map.navigate` events. **It does not receive
-`browse.inapp` with `sharedCookie=false`** — those URLs are handed to
-Chrome Custom Tabs by the SDK itself, preserving the behaviour the
-example above relies on (a `sharedCookie=false` callback always implies
-the host should launch the URL in an external app).
+session (typical example: stamp-rally reward downloads). Receives
+`browse.app`, `browse.inapp` with `sharedCookie=true`, and
+`map.navigate`; `browse.inapp` with `sharedCookie=false` is opened
+by the SDK in Chrome Custom Tabs and does not surface here. Schemes
+are pre-filtered to `{ http, https, tel, mailto, sms, geo }`.
 
 ### `PmWebView.OnOpenLinkRoutingListener`
 
@@ -237,30 +232,11 @@ interface OnOpenLinkRoutingListener : OnOpenLinkListener {
 }
 ```
 
-Opt-in variant for hosts that need to route every `browse.*` /
-`map.navigate` event themselves — including `browse.inapp` with
-`sharedCookie=false`, which the v1 listener never sees. Implementers
-take over the SDK's built-in Chrome Custom Tabs launcher for those
-URLs.
-
-`openInExternalApp` is `true` for `browse.app` and `map.navigate` (the
-web layer is signalling that the URL should leave the app) and `false`
-for `browse.inapp` (the web layer wants the URL to open inside the
-app). This is the canonical signal the v1 2-arg signature could not
-express, since `browse.app` and `browse.inapp + sharedCookie=false`
-both surfaced as `sharedCookie=false` callbacks.
-
-The Flutter Android plugin implements this interface so the Dart-side
-`onOpenLink` callback receives every event symmetrically with iOS;
-native Android hosts that need the same level of control can adopt it
-too. Hosts that are happy with the v1 routing should keep implementing
-`OnOpenLinkListener` and require no changes.
-
-Kotlin implementers only need to override the 3-argument `onOpenLink`
-— the inherited 2-argument variant has a forwarding default the SDK
-never calls. Java implementers must override both methods because
-Kotlin's default interface methods are not visible to Java under the
-default `-Xjvm-default=disable` mode.
+Opt-in variant that also receives `browse.inapp` with
+`sharedCookie=false` and exposes `openInExternalApp` (`true` for
+`browse.app` / `map.navigate`, `false` for `browse.inapp`). Used by
+the Flutter Android plugin to keep the Dart-side `onOpenLink`
+symmetric with iOS.
 
 ---
 
