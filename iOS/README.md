@@ -119,7 +119,7 @@ extension HostViewController: PMMainViewControllerDelegate {
 | `userId` | `String?` | — | Opaque user id forwarded via `app.info`. |
 | `secretKey` | `String?` | — | Shared secret forwarded via `app.info`. Treat as sensitive. |
 | `offsetBottom` | `Int` | — | When `> 0`, the SDK reports the bottom safe-area inset as `0` (e.g. when the host adds its own bottom inset). |
-| `safeAreaTopOverride` | `Int?` | — | When set, used instead of `safeAreaInsets.top`. Pass an explicit value when `PMMainViewController` is embedded via `addChild` or presented as `.fullScreen`, where the auto-detected inset can read `0` on first attach. |
+| `safeAreaTopOverride` | `Int?` | — | Optional override for the top safe-area inset reported to the web layer. The SDK reads `safeAreaInsets.top` after the first layout pass; set the override when the host already knows the value (e.g. Flutter passes `MediaQuery.padding.top`). |
 | `safeAreaBottomOverride` | `Int?` | — | Companion to `safeAreaTopOverride` for the bottom inset. |
 | `launchURL` | `URL?` | — | URL captured from a Universal Link / Custom URL Scheme launch, replayed once `web.ready` fires. |
 | `beaconUuid` | `String?` | — | Hyphenated iBeacon proximity UUID. Invalid UUIDs disable beacons silently. |

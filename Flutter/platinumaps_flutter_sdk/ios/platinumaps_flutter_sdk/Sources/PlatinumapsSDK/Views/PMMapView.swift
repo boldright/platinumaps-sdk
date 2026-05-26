@@ -158,6 +158,12 @@ public class PMMapView: UIView {
     /// out of window hierarchies.
     private var isFirstAttach = true
 
+    /// Latch used to issue the initial URL load exactly once, on the first
+    /// `layoutSubviews` after `didMoveToWindow`. Reading `safeAreaInsets`
+    /// before the first layout pass returns `.zero`, so we defer the URL
+    /// build until insets are valid.
+    private var hasLoadedInitialURL = false
+
     /// `true` while the WebView is loading a top-level page.
     private var isWebViewLoading = false
 
@@ -309,11 +315,25 @@ public class PMMapView: UIView {
         performFirstAttachSetup()
     }
 
+    public override func layoutSubviews() {
+        super.layoutSubviews()
+        // `safeAreaInsets` is only meaningful after the first layout pass,
+        // so the initial URL load is deferred to here. The latch ensures
+        // subsequent layouts (rotation, bounds change) do not re-issue it.
+        guard window != nil,
+              mainWebView != nil,
+              !hasLoadedInitialURL else {
+            return
+        }
+        hasLoadedInitialURL = true
+        loadInitialURL()
+    }
+
     /// One-time setup that runs on the first `didMoveToWindow` after init.
-    /// Mirrors the work that used to be split between `viewDidLoad` (WebView
-    /// + cover image construction, location manager wiring) and
-    /// `viewDidAppear` (URL build, initial load, foreground/background
-    /// observer registration).
+    /// Builds the WebView / cover image, wires the location manager, and
+    /// registers foreground / background observers. The actual URL build
+    /// + load is delayed to [loadInitialURL] so we can read post-layout
+    /// `safeAreaInsets`.
     private func performFirstAttachSetup() {
         // An empty or nil `mapSlug` cannot resolve to a valid map URL.
         // Bail out with a logged warning instead of crashing the host
@@ -365,10 +385,28 @@ public class PMMapView: UIView {
         locationManager.delegate = self
         initBeaconIfNeeded()
 
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(willEnterForegroundNotification(_:)),
+                                               name: UIApplication.willEnterForegroundNotification,
+                                               object: nil)
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(didEnterBackgroundNotification(_:)),
+                                               name: UIApplication.didEnterBackgroundNotification,
+                                               object: nil)
+    }
+
+    /// Builds the map URL with post-layout safe-area insets and triggers
+    /// the initial WebView load. Called from `layoutSubviews` exactly once
+    /// per view instance (guarded by `hasLoadedInitialURL`).
+    private func loadInitialURL() {
+        guard let mapSlug = mapSlug, !mapSlug.isEmpty else {
+            return
+        }
+
         let path = "/maps/\(mapSlug)"
         var urlComp = URLComponents(string: "\(mapOrigin)\(path)")!
 
-        var queryItems = [URLQueryItem]();
+        var queryItems = [URLQueryItem]()
 
         // `culture` is normally derived from the WebView's
         // `Accept-Language` header (which itself follows the host app's
@@ -390,12 +428,7 @@ public class PMMapView: UIView {
             }
             queryItems.append(URLQueryItem(name: item.key, value: item.value))
         }
-        // When the host has supplied explicit safe-area values
-        // (`safeAreaTopOverride` / `safeAreaBottomOverride`), use them
-        // verbatim. Otherwise fall back to `self.safeAreaInsets` — which
-        // is only valid after the view has been laid out, so reading on
-        // first attach can return zero on devices with a notch / home
-        // indicator (callers needing accuracy should set the override).
+
         let safeAreaTop: Double = safeAreaTopOverride.map(Double.init)
             ?? Double(self.safeAreaInsets.top)
         let safeAreaBottom: Double
@@ -406,8 +439,8 @@ public class PMMapView: UIView {
         } else {
             safeAreaBottom = Double(self.safeAreaInsets.bottom)
         }
-        queryItems.append(URLQueryItem(name: "safearea", value: "\(safeAreaTop),\(safeAreaBottom)"));
-        urlComp.queryItems = queryItems;
+        queryItems.append(URLQueryItem(name: "safearea", value: "\(safeAreaTop),\(safeAreaBottom)"))
+        urlComp.queryItems = queryItems
 
         if let url = urlComp.url {
             originalUrl = urlComp
@@ -415,15 +448,6 @@ public class PMMapView: UIView {
             mainWebView.navigationDelegate = self
             mainWebView.load(URLRequest(url: url))
         }
-
-        NotificationCenter.default.addObserver(self,
-                                               selector: #selector(willEnterForegroundNotification(_:)),
-                                               name: UIApplication.willEnterForegroundNotification,
-                                               object: nil)
-        NotificationCenter.default.addObserver(self,
-                                               selector: #selector(didEnterBackgroundNotification(_:)),
-                                               name: UIApplication.didEnterBackgroundNotification,
-                                               object: nil)
     }
 
     deinit {
