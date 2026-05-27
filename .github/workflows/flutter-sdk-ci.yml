@@ -26,15 +26,6 @@ on:
       - 'i18n/**'
       - 'scripts/**'
       - '.github/workflows/flutter-sdk-ci.yml'
-  pull_request:
-    paths:
-      - 'Flutter/**'
-      - 'iOS/platinumaps-sdk/**'
-      - 'Android/platinumaps-sdk/**'
-      - 'Package.swift'
-      - 'i18n/**'
-      - 'scripts/**'
-      - '.github/workflows/flutter-sdk-ci.yml'
 
 # Cancel older runs on the same branch when a new commit lands.
 concurrency:
