@@ -3,10 +3,9 @@
 All notable changes to this package are documented in this file. The
 format follows [Keep a Changelog](https://keepachangelog.com).
 
-## [Unreleased] — towards 1.0.0
+## [1.0.0] - 2026-06-08
 
-Initial release as 1.0.0. When the release tag is cut, rename this
-heading to `## [1.0.0] - YYYY-MM-DD`.
+Initial release.
 
 ### Added
 
