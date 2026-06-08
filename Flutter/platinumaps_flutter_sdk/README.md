@@ -157,7 +157,7 @@ with overlay composition and `onOpenLink` plumbing lives in
 | `appStoreId` | App Store ID consumed by `app.review` | ✓ | — |
 | `userId` | Opaque user identifier exposed to the web layer | ✓ | ✓ |
 | `secretKey` | Opaque shared secret exposed to the web layer | ✓ | ✓ |
-| `safeAreaTop`, `safeAreaBottom` | Safe-area insets (logical pixels) forwarded to the web layer. Default `null` reads the ambient `MediaQuery.paddingOf(context)`, so a full-screen map insets automatically and a map inside a `Scaffold` body resolves to `0` on its own. Pass an explicit value to override (e.g. `0` to force the web UI flush) | ✓ | ✓ |
+| `safeAreaTop`, `safeAreaBottom` | Safe-area insets (logical pixels) forwarded to the web layer. Default `null` reads the ambient `MediaQuery.paddingOf(context)` (device inset edge-to-edge, `0` below an opaque `AppBar`). With `extendBodyBehindAppBar: true` that ambient value inflates to the AppBar's bottom edge, so a full-screen map under such an `AppBar` should pass the route-level `MediaQuery.of(context).padding` explicitly. Pass `0` to force the web UI flush | ✓ | ✓ |
 | `beacon` | iBeacon ranging configuration | ✓ | ✓ |
 | `launchUrl` | Deep link forwarded to the web layer at first load | ✓ | ✓ |
 | `controller` | [`PlatinumapsMapController`](#updating-configuration-at-runtime) handle for runtime operations | ✓ | ✓ |

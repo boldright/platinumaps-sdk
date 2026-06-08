@@ -92,15 +92,14 @@ class PlatinumapsMapView extends StatefulWidget {
   /// pixels** (the same unit `MediaQuery.of(context).padding` uses).
   ///
   /// When `null` (the default) the widget reads the ambient
-  /// `MediaQuery.paddingOf(context).top`, so a full-screen map insets
-  /// its web UI under the status bar / notch without any host wiring.
-  /// Inside a `Scaffold` body the framework has already subtracted the
-  /// padding an `AppBar` consumed, so the ambient value is `0` there —
-  /// the map's coordinate space is already inset and nothing is needed.
-  ///
-  /// Pass an explicit value to override the ambient inset (e.g. `0` to
-  /// force the web UI flush to the top, or a custom inset for a bespoke
-  /// layout).
+  /// `MediaQuery.paddingOf(context).top` — correct for an edge-to-edge
+  /// map (insets the web UI under the status bar / notch) and below an
+  /// opaque `AppBar` (resolves to `0`). The catch: with
+  /// `extendBodyBehindAppBar: true` the `Scaffold` inflates this to the
+  /// AppBar's bottom edge, over-insetting the map. For a full-screen map
+  /// under such an `AppBar`, pass the route-level
+  /// `MediaQuery.of(context).padding.top` explicitly; pass `0` to force
+  /// the web UI flush to the top.
   ///
   /// Resolved once when the underlying platform view is created; later
   /// inset changes (rotation, …) do not propagate. Rebuild with a new
