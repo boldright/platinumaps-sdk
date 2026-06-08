@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:platinumaps_flutter_sdk/platinumaps_flutter_sdk.dart';
 
@@ -17,10 +18,10 @@ void main() {
       expect(widget.controller, isNull);
     });
 
-    test('safeAreaTop and safeAreaBottom default to 0', () {
+    test('safeAreaTop and safeAreaBottom default to null', () {
       const widget = PlatinumapsMapView(mapSlug: 'demo');
-      expect(widget.safeAreaTop, 0);
-      expect(widget.safeAreaBottom, 0);
+      expect(widget.safeAreaTop, isNull);
+      expect(widget.safeAreaBottom, isNull);
     });
 
     test('propagates every constructor argument', () {
@@ -61,6 +62,46 @@ void main() {
       expect(widget.launchUrl, launchUrl);
       expect(widget.onOpenLink, same(onOpenLink));
       expect(widget.controller, same(controller));
+    });
+  });
+
+  group('PlatinumapsMapView safe-area resolution', () {
+    Map<dynamic, dynamic> creationParamsOf(WidgetTester tester) {
+      final view = tester.widget<AndroidView>(find.byType(AndroidView));
+      return view.creationParams! as Map<dynamic, dynamic>;
+    }
+
+    Widget host(PlatinumapsMapView child) => MediaQuery(
+      data: const MediaQueryData(
+        padding: EdgeInsets.only(top: 44, bottom: 34),
+      ),
+      child: Directionality(textDirection: TextDirection.ltr, child: child),
+    );
+
+    testWidgets('null insets resolve to the ambient MediaQuery padding', (
+      tester,
+    ) async {
+      await tester.pumpWidget(host(const PlatinumapsMapView(mapSlug: 'demo')));
+      final params = creationParamsOf(tester);
+      expect(params['safeAreaTop'], 44);
+      expect(params['safeAreaBottom'], 34);
+    });
+
+    testWidgets('explicit insets override the ambient MediaQuery padding', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        host(
+          const PlatinumapsMapView(
+            mapSlug: 'demo',
+            safeAreaTop: 0,
+            safeAreaBottom: 8,
+          ),
+        ),
+      );
+      final params = creationParamsOf(tester);
+      expect(params['safeAreaTop'], 0);
+      expect(params['safeAreaBottom'], 8);
     });
   });
 

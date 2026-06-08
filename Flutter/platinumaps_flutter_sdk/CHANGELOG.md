@@ -19,6 +19,14 @@ heading to `## [1.0.0] - YYYY-MM-DD`.
   ignored — see `README.md` for the parity table. The iOS native
   SDK's `coverImage` is intentionally not exposed; render the splash
   from the Flutter host instead.
+- `safeAreaTop` / `safeAreaBottom` default to `null`, which resolves
+  to the ambient `MediaQuery.paddingOf(context)` at platform-view
+  creation. A full-screen map therefore insets its web UI under the
+  status bar / notch with no host wiring, while a map inside a
+  `Scaffold` body resolves to `0` automatically (the framework has
+  already subtracted the `AppBar`'s padding). Pass an explicit int to
+  override. The resolved value is still forwarded to the native side
+  verbatim, so native behaviour is unchanged.
 - `PlatinumapsMapController` imperative handle. Attach via the
   widget's `controller:` parameter and call `pushLaunchUrl(Uri)` to
   forward a Universal Link / Custom URL Scheme that arrives after

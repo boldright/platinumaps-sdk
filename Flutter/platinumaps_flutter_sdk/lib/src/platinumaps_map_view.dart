@@ -40,15 +40,21 @@ class PlatinumapsMapView extends StatefulWidget {
     this.appStoreId,
     this.userId,
     this.secretKey,
-    this.safeAreaTop = 0,
-    this.safeAreaBottom = 0,
+    this.safeAreaTop,
+    this.safeAreaBottom,
     this.beacon,
     this.launchUrl,
     this.onOpenLink,
     this.controller,
   }) : assert(mapSlug != '', 'mapSlug must not be empty'),
-       assert(safeAreaTop >= 0, 'safeAreaTop must not be negative'),
-       assert(safeAreaBottom >= 0, 'safeAreaBottom must not be negative');
+       assert(
+         safeAreaTop == null || safeAreaTop >= 0,
+         'safeAreaTop must not be negative',
+       ),
+       assert(
+         safeAreaBottom == null || safeAreaBottom >= 0,
+         'safeAreaBottom must not be negative',
+       );
 
   /// The map identifier appended to `https://platinumaps.jp/maps/`.
   ///
@@ -85,16 +91,26 @@ class PlatinumapsMapView extends StatefulWidget {
   /// Top safe-area inset reported to the web layer, in **logical
   /// pixels** (the same unit `MediaQuery.of(context).padding` uses).
   ///
-  /// Pass `MediaQuery.of(context).padding.top` when the map fills the
-  /// screen and you want the web UI to inset itself under the status
-  /// bar / notch. Pass `0` when the host is already drawing chrome
-  /// above the map (e.g. an `AppBar`) and the map's own coordinate
-  /// space is already inset.
-  final int safeAreaTop;
+  /// When `null` (the default) the widget reads the ambient
+  /// `MediaQuery.paddingOf(context).top`, so a full-screen map insets
+  /// its web UI under the status bar / notch without any host wiring.
+  /// Inside a `Scaffold` body the framework has already subtracted the
+  /// padding an `AppBar` consumed, so the ambient value is `0` there —
+  /// the map's coordinate space is already inset and nothing is needed.
+  ///
+  /// Pass an explicit value to override the ambient inset (e.g. `0` to
+  /// force the web UI flush to the top, or a custom inset for a bespoke
+  /// layout).
+  ///
+  /// Resolved once when the underlying platform view is created; later
+  /// inset changes (rotation, …) do not propagate. Rebuild with a new
+  /// key if the map must re-inset.
+  final int? safeAreaTop;
 
   /// Bottom safe-area inset reported to the web layer, in **logical
-  /// pixels**. Same conventions as [safeAreaTop].
-  final int safeAreaBottom;
+  /// pixels**. Same conventions as [safeAreaTop]: `null` reads the
+  /// ambient `MediaQuery.paddingOf(context).bottom`.
+  final int? safeAreaBottom;
 
   /// Beacon ranging configuration. Pass `null` to disable beacon
   /// scanning entirely.
@@ -158,7 +174,10 @@ class _PlatinumapsMapViewState extends State<PlatinumapsMapView> {
     super.dispose();
   }
 
-  Map<String, Object?> _creationParams() {
+  Map<String, Object?> _creationParams({
+    required int safeAreaTop,
+    required int safeAreaBottom,
+  }) {
     return {
       'mapSlug': widget.mapSlug,
       if (widget.queryParams != null) 'queryParams': widget.queryParams,
@@ -166,8 +185,8 @@ class _PlatinumapsMapViewState extends State<PlatinumapsMapView> {
       if (widget.appStoreId != null) 'appStoreId': widget.appStoreId,
       if (widget.userId != null) 'userId': widget.userId,
       if (widget.secretKey != null) 'secretKey': widget.secretKey,
-      'safeAreaTop': widget.safeAreaTop,
-      'safeAreaBottom': widget.safeAreaBottom,
+      'safeAreaTop': safeAreaTop,
+      'safeAreaBottom': safeAreaBottom,
       if (widget.beacon != null) 'beacon': widget.beacon!.toMap(),
       if (widget.launchUrl != null) 'launchUrl': widget.launchUrl!.toString(),
     };
@@ -208,7 +227,11 @@ class _PlatinumapsMapViewState extends State<PlatinumapsMapView> {
 
   @override
   Widget build(BuildContext context) {
-    final params = _creationParams();
+    final padding = MediaQuery.paddingOf(context);
+    final params = _creationParams(
+      safeAreaTop: widget.safeAreaTop ?? padding.top.round(),
+      safeAreaBottom: widget.safeAreaBottom ?? padding.bottom.round(),
+    );
     const codec = StandardMessageCodec();
 
     switch (defaultTargetPlatform) {
