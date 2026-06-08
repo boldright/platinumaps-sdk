@@ -103,6 +103,7 @@ class PmWebView @JvmOverloads constructor(
         APP_INFO("app.info"),
         APP_DETECT("app.detect"),
         APP_REVIEW("app.review"),
+        APP_LINK("app.link"),
         MAP_NAVIGATE("map.navigate"),
 
         WEB_FILE_CHOOSER("web.filechooser"),
@@ -513,6 +514,12 @@ class PmWebView @JvmOverloads constructor(
     }
 
     private fun openPlatinumaps(options: PmMapOptions, queryPrams: String?) {
+        // Stash the `app.info` fields so the `app.info` command can echo
+        // them back to the web layer regardless of how the caller built
+        // the options (Flutter plugin glue, native sample, …).
+        userId = options.userId
+        secretKey = options.secretKey
+
         // Build the URL safely with Uri.Builder so query values are encoded
         // correctly even when they contain `&`, `=`, etc.
         val uriBuilder = "https://platinumaps.jp/maps/".toUri().buildUpon()
@@ -788,6 +795,14 @@ class PmWebView @JvmOverloads constructor(
         val requestId = commandUri.getQueryParameter("requestId")
         requestId ?: return 1u
         when (command) {
+            PMCommand.APP_LINK -> {
+                // Outbound only: the SDK pushes this command via
+                // `commandPush(APP_LINK, …)` from `pushLaunchURL`.
+                // The web layer never issues a `command://app.link`
+                // navigation, so reaching here is a no-op.
+                return 0u
+            }
+
             PMCommand.APP_INFO -> {
                 val args = mutableMapOf<String, String>()
                 userId?.let {
@@ -952,6 +967,28 @@ class PmWebView @JvmOverloads constructor(
         evaluateJavascript(callback) { _ -> }
     }
 
+    /** Sends an unsolicited command to the web side (no requestId). */
+    private fun commandPush(command: PMCommand, args: Map<String, Any>) {
+        val argsJson = JSONObject(args).toString()
+        val script = "commandPush(${JSONObject.quote(command.rawValue)},$argsJson)"
+        evaluateJavascript(script) { _ -> }
+    }
+
+    /**
+     * Forwards a URL (typically captured from a Universal Link / Custom
+     * URL Scheme launch) to the web layer at runtime. Mirrors the iOS
+     * SDK's `PMMapView.pushLaunchURL(_:)`. If the web layer has not yet
+     * signalled `web.ready`, the URL is stashed and replayed when it
+     * arrives.
+     */
+    fun pushLaunchURL(uri: Uri) {
+        if (!hasWebReady) {
+            appLinkUri = uri
+            return
+        }
+        commandPush(PMCommand.APP_LINK, mapOf("url" to uri.toString()))
+    }
+
     //endregion
 
     //region Web Browse
@@ -1029,17 +1066,64 @@ class PmWebView @JvmOverloads constructor(
     }
 
     private fun openWebBrowseInApp(uri: Uri) {
-        parentActivity?.let {
-            CustomTabsIntent.Builder().build().launchUrl(it, uri)
+        // `browse.inapp` with sharedCookie=false. v1 hosts (legacy
+        // [OnOpenLinkListener] implementers) do NOT receive this event —
+        // the SDK keeps the v1 contract by handing the URL to Chrome
+        // Custom Tabs. Only [OnOpenLinkRoutingListener] implementers
+        // (typically the Flutter Android glue) opt into receiving it.
+        val listener = onOpenLinkListener
+        if (listener is OnOpenLinkRoutingListener) {
+            listener.onOpenLink(uri, sharedCookie = false, openInExternalApp = false)
+        } else {
+            openLinkUsingDefault(uri, sharedCookie = false, openInExternalApp = false)
         }
     }
 
     private fun openWebBrowseActivity(uri: Uri) {
-        onOpenLinkListener?.onOpenLink(uri, true)
+        // `browse.inapp` with sharedCookie=true. v1 hosts always
+        // received this on the 2-arg signature; v2 hosts receive the
+        // richer 3-arg signature with openInExternalApp=false.
+        val listener = onOpenLinkListener
+        if (listener is OnOpenLinkRoutingListener) {
+            listener.onOpenLink(uri, sharedCookie = true, openInExternalApp = false)
+        } else {
+            listener?.onOpenLink(uri, sharedCookie = true)
+        }
     }
 
     private fun openWebBrowseApp(uri: Uri) {
-        onOpenLinkListener?.onOpenLink(uri, false)
+        // `browse.app` and `map.navigate`. v1 hosts always received this
+        // on the 2-arg signature; v2 hosts receive the richer 3-arg
+        // signature with openInExternalApp=true so they can distinguish
+        // it from `browse.inapp` with sharedCookie=false.
+        val listener = onOpenLinkListener
+        if (listener is OnOpenLinkRoutingListener) {
+            listener.onOpenLink(uri, sharedCookie = false, openInExternalApp = true)
+        } else {
+            listener?.onOpenLink(uri, sharedCookie = false)
+        }
+    }
+
+    /**
+     * Runs the SDK's built-in link handler for [uri] — the same routing
+     * the browse commands use when no [onOpenLinkListener] is set.
+     * Listeners that want to selectively fall back to the SDK can call
+     * this from their callback.
+     *
+     * Today only `http`/`https` + `sharedCookie == false` + `openInExternalApp
+     * == false` has a built-in handler (Chrome Custom Tabs). Everything
+     * else is logged and dropped — the Android SDK has no external-app
+     * launcher or shared-cookie WebView today.
+     */
+    fun openLinkUsingDefault(uri: Uri, sharedCookie: Boolean, openInExternalApp: Boolean) {
+        val scheme = uri.scheme?.lowercase()
+        if (openInExternalApp || scheme !in setOf("http", "https") || sharedCookie) {
+            Log.w(TAG, "openLinkUsingDefault: no built-in handler for $uri; dropping")
+            return
+        }
+        parentActivity?.let {
+            CustomTabsIntent.Builder().build().launchUrl(it, uri)
+        }
     }
 
     //endregion
@@ -1972,9 +2056,21 @@ class PmWebView @JvmOverloads constructor(
     //endregion
 
     /**
-     * Interface definition for a callback to be invoked when a link is opened within the Platinumaps.
+     * v1 listener interface kept for back-compat with hosts that adopted
+     * the original 2-argument signature.
      *
-     * This listener can be used to handle various types of links, not just web URLs, but also other schemes like 'tel:' and 'mailto:'.
+     * Receives `browse.app`, `browse.inapp` with `sharedCookie=true`, and
+     * `map.navigate` events. **Does NOT receive `browse.inapp` with
+     * `sharedCookie=false`** — those URLs are handled by the SDK's
+     * built-in Chrome Custom Tabs launcher, preserving the v1 behaviour
+     * on which existing sample code relies (`sharedCookie=false` on the
+     * 2-arg signature implies the host should launch the URL in an
+     * external app).
+     *
+     * Hosts that need to receive every `browse.*` event — including
+     * `browse.inapp` with `sharedCookie=false` — and to distinguish
+     * `browse.app` from `browse.inapp` should implement
+     * [OnOpenLinkRoutingListener] instead.
      */
     interface OnOpenLinkListener {
 
@@ -1985,5 +2081,53 @@ class PmWebView @JvmOverloads constructor(
          * @param sharedCookie A boolean flag that is true when user information needs to be passed to the link, such as for temporary download benefits or external link benefits.
          */
         fun onOpenLink(url: Uri, sharedCookie: Boolean)
+    }
+
+    /**
+     * v2 listener interface that surfaces every `browse.*` /
+     * `map.navigate` event the SDK forwards externally, including
+     * `browse.inapp` with `sharedCookie=false` which the SDK would
+     * otherwise dispatch to its built-in Chrome Custom Tabs launcher.
+     *
+     * Implementers opt out of the SDK's default Custom Tabs handling
+     * for `browse.inapp` and take responsibility for routing those URLs
+     * themselves. Typically used by the Flutter Android glue so the
+     * Dart-side `onOpenLink` callback receives every event symmetrically
+     * with iOS.
+     *
+     * Kotlin implementers can override the 3-argument [onOpenLink] only;
+     * the 2-argument variant inherited from [OnOpenLinkListener] is
+     * supplied with a forwarding default that the SDK never calls on a
+     * routing listener.
+     *
+     * Java implementers must override both methods explicitly because
+     * Kotlin's default interface methods are not visible to Java callers
+     * under the default `-Xjvm-default=disable` mode.
+     */
+    interface OnOpenLinkRoutingListener : OnOpenLinkListener {
+
+        /**
+         * Called for every `browse.*` / `map.navigate` event.
+         *
+         * @param url The URI to be opened.
+         * @param sharedCookie `true` when the destination needs to
+         *   inherit the current Platinumaps session (stamp-rally rewards
+         *   etc.); `false` otherwise.
+         * @param openInExternalApp `true` for `browse.app` and
+         *   `map.navigate` (the web layer is signalling that the URL
+         *   should leave the app); `false` for `browse.inapp` (the web
+         *   layer wants the URL to open inside the app).
+         */
+        fun onOpenLink(url: Uri, sharedCookie: Boolean, openInExternalApp: Boolean)
+
+        /**
+         * Forwarding default for the inherited 2-argument signature. The
+         * SDK never calls this on a [OnOpenLinkRoutingListener], so this
+         * exists purely as a safety net for Kotlin call sites that might
+         * still reach for the 2-arg variant.
+         */
+        override fun onOpenLink(url: Uri, sharedCookie: Boolean) {
+            onOpenLink(url, sharedCookie, openInExternalApp = false)
+        }
     }
 }

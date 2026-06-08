@@ -248,6 +248,10 @@ fabric.properties
 ### AndroidStudio Patch ###
 
 !/gradle/wrapper/gradle-wrapper.jar
+# Also include any Gradle wrapper jar nested under a sub-project
+# (e.g. Flutter/example/android/) so CI runners can `./gradlew` it
+# without needing to install a system Gradle.
+!**/gradle/wrapper/gradle-wrapper.jar
 
 # End of https://www.toptal.com/developers/gitignore/api/swift,xcode,kotlin,androidstudio
 

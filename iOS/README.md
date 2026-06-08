@@ -21,10 +21,14 @@ URL.
 
 ### Manual integration
 
-Copy the `iOS/platinumaps-sdk/` directory (including `Platinumaps.bundle/`)
-into your Xcode project. The package manifest registers the bundle as a
-processed resource; for manual integration, add it to your target's
-**Copy Bundle Resources** build phase.
+Copy the `iOS/platinumaps-sdk/` directory into your Xcode project. The
+SDK is self-contained — its localized permission-alert strings are
+embedded in `PMLocalizedStrings.swift`, so no resource bundle needs to
+be added to the target's **Copy Bundle Resources** build phase.
+
+> If you upgraded from an older SDK that shipped `Platinumaps.bundle/`,
+> remove that stale reference from the target's build phases and
+> project tree — the bundle is gone.
 
 ## Folder structure
 
@@ -32,11 +36,12 @@ processed resource; for manual integration, add it to your target's
 iOS/platinumaps-sdk
 ├── Errors/PMError.swift                          ← reserved error type
 ├── Types/PMLocale.swift                          ← `culture` enum
+├── Types/PMLocalizedStrings.swift                ← embedded permission strings
 ├── ViewControllers
 │   ├── PMMainViewController.swift                ← public entry point
 │   └── PMWebViewController.swift                 ← in-app browser
-├── Views/PMWebView.swift                         ← WKWebView (zero insets)
-└── Platinumaps.bundle/<locale>.lproj/            ← localized permission strings
+├── Views/PMMapView.swift                         ← public map view (UIView)
+└── Views/PMWebView.swift                         ← WKWebView (zero insets)
 ```
 
 ## Required `Info.plist` keys
@@ -121,13 +126,16 @@ Universal Link / Custom URL Scheme **after** `PMMainViewController` is
 already on screen. URLs received before `web.ready` are stashed and
 replayed automatically.
 
-### `PMMainViewControllerDelegate`
+### `PMMapViewDelegate` (a.k.a. `PMMainViewControllerDelegate`)
 
 ```swift
 @MainActor
-protocol PMMainViewControllerDelegate: AnyObject {
+public protocol PMMapViewDelegate: AnyObject {
     func openLink(_ url: URL, sharedCookie: Bool)
 }
+
+// Backwards-compatible alias for hosts that adopted the original name.
+public typealias PMMainViewControllerDelegate = PMMapViewDelegate
 ```
 
 `sharedCookie == true` means the destination needs the current Platinumaps
@@ -165,5 +173,6 @@ actor. There is no need to hop queues from the host.
   `UINavigationController` if you want a close button.
 - It does not request notification permissions, analytics consent, or any
   permission other than location, camera, microphone, and bluetooth.
-- It does not retry network failures itself; the web layer surfaces its
-  own retry UI.
+- It retries network failures internally only while the initial load
+  is in flight; after `web.ready` retries are the web layer's
+  responsibility.

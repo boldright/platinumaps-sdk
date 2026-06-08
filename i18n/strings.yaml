@@ -1,0 +1,107 @@
+# Single source of truth for the SDK's localized UI strings.
+#
+# This file is consumed by `scripts/generate-strings.py`, which writes:
+#   - iOS:     iOS/platinumaps-sdk/Types/PMLocalizedStrings.swift
+#   - Android: Android/platinumaps-sdk/src/main/res/values{,-ja,-ko,-b+zh+Hans,-b+zh+Hant}/strings.xml
+#
+# After editing this file, run:
+#     python3 scripts/generate-strings.py
+# and commit the regenerated platform files alongside this YAML.
+#
+# Each entry may declare:
+#   ios_key:     the unqualified key used by PMMapView.localizedString(forKey:).
+#                Omit for strings that do not exist on iOS.
+#   android_key: the `<string name="...">` used by Android's resources.
+#                Omit for strings that do not exist on Android.
+#   translations:
+#     en:        required; used as the fallback when a language is missing.
+#     ja, ko, zh-Hans, zh-Hant: optional but recommended.
+#
+# Supported language codes (kept in sync with the supported `culture` codes
+# the web app accepts):
+#
+#   en        → iOS default + Android values/
+#   ja        → iOS table   + Android values-ja/
+#   ko        → iOS table   + Android values-ko/
+#   zh-Hans   → iOS table   + Android values-b+zh+Hans/
+#   zh-Hant   → iOS table   + Android values-b+zh+Hant/
+
+strings:
+  - ios_key: PMDeniedTitle
+    translations:
+      en: "Notice"
+      ja: "確認"
+      ko: "확인"
+      zh-Hans: "确认"
+      zh-Hant: "確認"
+
+  # The Android dialog title uses "Permission Required" in English
+  # whereas iOS uses "Notice"; preserve the existing phrasing on each
+  # platform rather than force a single English wording.
+  - android_key: dialog_title_location_permission
+    translations:
+      en: "Permission Required"
+      ja: "確認"
+      ko: "확인"
+      zh-Hans: "确认"
+      zh-Hant: "確認"
+
+  - ios_key: PMDeniedMessage
+    translations:
+      en: "This feature requires location services. Please open the settings and allow the app to access your location."
+      ja: "この機能は位置情報を利用します。設定を開いて、アプリに位置情報の利用を許可してください。"
+      ko: "이 기능은 위치 정보를 사용합니다. 설정을 열어 앱에 위치 정보 사용을 허용해주세요."
+      zh-Hans: "此功能需要使用位置信息。请打开设置，允许应用访问您的位置信息。"
+      zh-Hant: "此功能需要使用位置信息。請打開設定，允許應用程式訪問您的位置信息。"
+
+  # Android's location-permission dialog message is phrased slightly more
+  # tersely than the iOS one (no "open the settings"); the two existed
+  # independently before this YAML and we preserve them verbatim.
+  - android_key: dialog_message_location_permission
+    translations:
+      en: "Please allow location access to use current location feature."
+      ja: "この機能は位置情報を利用します。位置情報の利用を許可してください。"
+      ko: "이 기능은 위치 정보를 사용합니다. 위치 정보 사용을 허용하세요."
+      zh-Hans: "此功能需要使用位置信息。请允许使用位置信息。"
+      zh-Hant: "此功能需要使用位置信息。請允許使用位置信息。"
+
+  # iOS phrases the Settings-app button as a verb ("Open settings");
+  # the Android counterpart was deleted as part of the unused-string
+  # cleanup (no Kotlin / layout reference).
+  - ios_key: PMDeniedOk
+    translations:
+      en: "Settings"
+      ja: "設定を開く"
+      ko: "설정 열기"
+      zh-Hans: "打开设置"
+      zh-Hant: "打開設定"
+
+  - ios_key: PMDeniedCancel
+    translations:
+      en: "Cancel"
+      ja: "キャンセル"
+      ko: "취소"
+      zh-Hans: "取消"
+      zh-Hant: "取消"
+
+  - ios_key: PMRestrictedTitle
+    translations:
+      en: "Location Services Unavailable"
+      ja: "位置情報を利用できません"
+      ko: "위치 정보를 사용할 수 없습니다"
+      zh-Hans: "无法使用位置信息"
+      zh-Hant: "無法使用位置信息"
+
+  - ios_key: PMRestrictedMessage
+    translations:
+      en: "Location services are restricted on this device, so the app cannot access your location."
+      ja: "この端末では位置情報の利用が制限されているため、位置情報を利用できません。"
+      ko: "이 장치에서는 위치 정보 사용이 제한되어 있어, 위치 정보를 사용할 수 없습니다."
+      zh-Hans: "此设备的位置信息使用已被限制，无法使用位置信息功能。"
+      zh-Hant: "此設備的位置信息使用已被限制，無法使用位置信息功能。"
+
+  # Android-only strings inherited from pre-existing UI features
+  # (camera-permission dialog, QR reader, etc.) used to live here.
+  # They were all unreferenced from Kotlin and from XML layouts and
+  # were dropped during cleanup; re-add an entry here when an actual
+  # consumer in `Android/platinumaps-sdk/src/main/` lands.

@@ -33,6 +33,7 @@ Android/
 
 <uses-permission android:name="android.permission.CAMERA" />
 <uses-permission android:name="android.permission.RECORD_AUDIO" />
+<uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 <uses-feature android:name="android.hardware.camera" android:required="false" />
 <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
@@ -180,7 +181,9 @@ class WebViewActivity : AppCompatActivity(), PmWebView.OnOpenLinkListener {
 | `activityDestroy()` | Tears down the WebView and releases native resources. Call from `onDestroy()`. |
 | `handlePermissionResult(requestCode, grantResults)` | Forwards `onRequestPermissionsResult` results into the SDK. |
 | `handleFileChooserResult(requestCode, resultCode, data)` | Forwards `onActivityResult` results for the file chooser. |
-| `onOpenLinkListener: OnOpenLinkListener?` | Optional. Custom outbound link handling. |
+| `pushLaunchURL(uri: Uri)` | Forwards a URL to the web app at runtime (Universal Link / deep link received after the WebView is on screen). |
+| `openLinkUsingDefault(uri, sharedCookie, openInExternalApp)` | Runs the SDK's built-in link handler. `OnOpenLinkRoutingListener` implementations can call this to selectively fall back to Custom Tabs. |
+| `onOpenLinkListener: OnOpenLinkListener?` | Optional. Custom outbound link handling. Accepts either `OnOpenLinkListener` or `OnOpenLinkRoutingListener`. |
 
 ### `PmMapOptions`
 
@@ -191,6 +194,8 @@ data class PmMapOptions(
     val safeAreaTop: Int = 0,
     val safeAreaBottom: Int = 0,
     val beacon: PmMapBeaconOptions? = null,
+    val userId: String? = null,              // forwarded via `app.info`
+    val secretKey: String? = null,           // forwarded via `app.info`, sensitive
 )
 ```
 
@@ -217,9 +222,25 @@ interface OnOpenLinkListener {
 ```
 
 `sharedCookie == true` indicates the link needs the current Platinumaps
-session (typical example: stamp-rally reward downloads). The SDK already
-restricts forwarded URL schemes to `{ http, https, tel, mailto, sms, geo }`;
-the host does not need to filter again.
+session (typical example: stamp-rally reward downloads). Receives
+`browse.app`, `browse.inapp` with `sharedCookie=true`, and
+`map.navigate`; `browse.inapp` with `sharedCookie=false` is opened
+by the SDK in Chrome Custom Tabs and does not surface here. Schemes
+are pre-filtered to `{ http, https, tel, mailto, sms, geo }`.
+
+### `PmWebView.OnOpenLinkRoutingListener`
+
+```kotlin
+interface OnOpenLinkRoutingListener : OnOpenLinkListener {
+    fun onOpenLink(url: Uri, sharedCookie: Boolean, openInExternalApp: Boolean)
+}
+```
+
+Opt-in variant that also receives `browse.inapp` with
+`sharedCookie=false` and exposes `openInExternalApp` (`true` for
+`browse.app` / `map.navigate`, `false` for `browse.inapp`). Used by
+the Flutter Android plugin to keep the Dart-side `onOpenLink`
+symmetric with iOS.
 
 ---
 

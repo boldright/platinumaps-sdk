@@ -10,8 +10,7 @@ let package = Package(
     targets: [
         .target(
             name: "PlatinumapsSDK",
-            path: "iOS/platinumaps-sdk",
-            resources: [.process("Platinumaps.bundle")]
+            path: "iOS/platinumaps-sdk"
         ),
     ]
 )
