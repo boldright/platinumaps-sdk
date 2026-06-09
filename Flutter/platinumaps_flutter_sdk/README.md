@@ -3,9 +3,10 @@
 Embed the [Platinumaps](https://platinumaps.jp) web map in a Flutter
 app. The Flutter SDK is a thin wrapper around the existing native iOS
 and Android SDKs in this repository (`iOS/`, `Android/`); see
-[`DESIGN.md`](DESIGN.md) for the architecture.
+[`DESIGN.md`](../DESIGN.md) for the architecture.
 
-> Status: pre-release scaffold. The package is not yet on pub.dev.
+> Distributed as a git dependency from this repository (see
+> [Quick start](#quick-start)); it is not published to pub.dev.
 
 ## Requirements
 
@@ -27,8 +28,9 @@ features your map actually uses.
 dependencies:
   platinumaps_flutter_sdk:
     git:
-      url: https://github.com/boldright/platinumaps-sdk
+      url: https://github.com/boldright/platinumaps-sdk.git
       path: Flutter/platinumaps_flutter_sdk
+      ref: flutter-v1.0.0
 ```
 
 When iterating on the SDK and a host app side-by-side, point at
@@ -40,7 +42,8 @@ dependencies:
     path: ../../platinumaps-sdk/Flutter/platinumaps_flutter_sdk
 ```
 
-Once published to pub.dev: `platinumaps_flutter_sdk: ^1.0.0`.
+`ref` pins to a released tag. To move to a newer release, bump it to
+the new tag (e.g. `flutter-v1.1.0`).
 
 ### 2. iOS deployment target — `ios/Podfile` **and** Xcode
 
